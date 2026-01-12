@@ -21,7 +21,7 @@ function resizeCanvas() {
     ORIGIN_X = canvas.width / 2;
     ORIGIN_Y = canvas.height / 2;
     const minDim = Math.min(canvas.width, canvas.height);
-    HEX_SIZE = Math.max(60, minDim / 13);
+    HEX_SIZE = Math.max(40, minDim / (gameState && gameState.maxPlayers > 4 ? 16 : 13)); // 拡張時は小さく
     if (gameState) render();
 }
 window.addEventListener('resize', resizeCanvas);
@@ -33,55 +33,113 @@ function playSystemSound(type) {
     new Audio(`sounds/${type}.mp3`).play().catch(()=>{});
 }
 
-function createBoardData() {
+function createBoardData(maxPlayers = 4) {
     const hexes=[],vertices=[],edges=[]; let id=0;
-    const mapDef=[{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
+    
+    // ★拡張マップ分岐
+    let mapDef;
+    if (maxPlayers > 4) {
+        // 5-6人マップ (拡張)
+        mapDef=[
+            {r:-3,qStart:0,count:3},
+            {r:-2,qStart:-1,count:4},
+            {r:-1,qStart:-2,count:5},
+            {r:0,qStart:-3,count:6},
+            {r:1,qStart:-3,count:5},
+            {r:2,qStart:-3,count:4},
+            {r:3,qStart:-3,count:3}
+        ];
+    } else {
+        // 通常マップ
+        mapDef=[
+            {r:-2,qStart:0,count:3},
+            {r:-1,qStart:-1,count:4},
+            {r:0,qStart:-2,count:5},
+            {r:1,qStart:-2,count:4},
+            {r:2,qStart:-2,count:3}
+        ];
+    }
+
     mapDef.forEach(row=>{for(let i=0;i<row.count;i++){
         const q=row.qStart+i, r=row.r;
         const x=Math.sqrt(3)*(q+r/2.0), y=3/2*r;
         hexes.push({id:id++,q,r,x,y,resource:null,number:0});
     }});
-    const res=['forest','forest','forest','forest','hill','hill','hill','mountain','mountain','mountain','field','field','field','field','pasture','pasture','pasture','pasture','desert'].sort(()=>Math.random()-0.5);
-    const nums=[5,2,6,3,8,10,9,12,11,4,8,10,9,4,5,6,3,11];
+
+    // 資源と数字（枚数調整）
+    let resBase = ['forest','forest','forest','forest','hill','hill','hill','mountain','mountain','mountain','field','field','field','field','pasture','pasture','pasture','pasture','desert'];
+    if (maxPlayers > 4) {
+        // 拡張分を追加（適当に増やす）
+        resBase = [...resBase, 'forest','forest','hill','hill','mountain','mountain','field','field','pasture','pasture','desert'];
+    }
+    const res = resBase.sort(()=>Math.random()-0.5);
+    
+    // 数字（拡張分含む）
+    let numsBase = [5,2,6,3,8,10,9,12,11,4,8,10,9,4,5,6,3,11];
+    if (maxPlayers > 4) {
+        numsBase = [...numsBase, 2,3,4,5,6,8,9,10,11,12]; // 追加分
+    }
+    const nums = numsBase; // シャッフルなしで配置（あるいはシャッフルしてもOK）
+
     let ri=0,ni=0;
-    hexes.forEach(h=>{ h.resource=res[ri++]; if(h.resource==='desert') h.number=0; else h.number=nums[ni++]; });
+    hexes.forEach(h=>{
+        h.resource = res[ri++] || 'desert'; // 足りない場合は砂漠
+        if(h.resource==='desert') h.number=0; else h.number=nums[ni++]||7;
+    });
+
     const rawV=[]; hexes.forEach(h=>{ for(let i=0;i<6;i++){ const r=Math.PI/180*(60*i-30); rawV.push({x:h.x+Math.cos(r), y:h.y+Math.sin(r)}); }});
     rawV.forEach(rv=>{ if(!vertices.find(v=>Math.hypot(v.x-rv.x,v.y-rv.y)<0.1)) vertices.push({id:vertices.length,x:rv.x,y:rv.y,owner:null,type:'none'}); });
     for(let i=0;i<vertices.length;i++){ for(let j=i+1;j<vertices.length;j++){ if(Math.hypot(vertices[i].x-vertices[j].x, vertices[i].y-vertices[j].y) < 1.1) edges.push({id:edges.length,v1:vertices[i].id,v2:vertices[j].id,owner:null}); }}
-    const ports=[], types=['any','pasture','any','forest','any','hill','any','field','mountain'];
-    const outer=vertices.filter(v=>Math.hypot(v.x,v.y)>2.4).sort((a,b)=>Math.atan2(a.y,a.x)-Math.atan2(b.y,b.x));
+    
+    // 港（外周判定）
+    const outer=vertices.filter(v=>Math.hypot(v.x,v.y) > (maxPlayers>4 ? 3.2 : 2.4)).sort((a,b)=>Math.atan2(a.y,a.x)-Math.atan2(b.y,b.x));
+    const types=['any','pasture','any','forest','any','hill','any','field','mountain'];
+    // 拡張なら港も増やす
+    const portTypes = maxPlayers > 4 ? [...types, 'any', 'any'] : types;
+    
     let pi=0;
-    for(let i=0;i<outer.length&&pi<types.length;i+=3){ if(i+1<outer.length){
+    for(let i=0;i<outer.length&&pi<portTypes.length;i+=3){ if(i+1<outer.length){
         const mx=(outer[i].x+outer[i+1].x)/2, my=(outer[i].y+outer[i+1].y)/2, ang=Math.atan2(my,mx);
-        ports.push({type:types[pi++],v1:outer[i].id,v2:outer[i+1].id,x:mx+0.4*Math.cos(ang),y:my+0.4*Math.sin(ang)});
+        // ports.push({type:portTypes[pi++],v1:outer[i].id,v2:outer[i+1].id,x:mx+0.4*Math.cos(ang),y:my+0.4*Math.sin(ang)}); // 前回の簡易実装
+        // 今回はとりあえずそのまま
+        ports.push({type:portTypes[pi++],v1:outer[i].id,v2:outer[i+1].id,x:mx+0.4*Math.cos(ang),y:my+0.4*Math.sin(ang)});
     }}
     return {hexes,vertices,edges,ports};
 }
 
 // UI Actions
-function joinGame() { const name = document.getElementById('username').value; if(name && socket) { socket.emit('joinGame', name); document.getElementById('login-screen').style.display='none'; document.getElementById('start-overlay').style.display='flex'; } }
-function startGame() { try { const data = createBoardData(); if(socket) { socket.emit('startGame', data); document.getElementById('start-btn-big').innerText="開始中..."; } } catch(e) { alert(e); } }
-function playDiceAnim() {
-    const ov = document.getElementById('dice-anim-overlay'); ov.style.display='flex';
-    const d1=document.getElementById('die1'), d2=document.getElementById('die2');
-    let c=0; const t = setInterval(()=>{ d1.innerText=Math.floor(Math.random()*6)+1; d2.innerText=Math.floor(Math.random()*6)+1; c++; if(c>8){ clearInterval(t); ov.style.display='none'; socket.emit('rollDice'); } },100);
+function joinGame() { 
+    const name = document.getElementById('username').value;
+    const maxP = document.getElementById('player-count').value;
+    if(name && socket) { 
+        socket.emit('joinGame', {name, maxPlayers: maxP}); 
+        document.getElementById('login-screen').style.display='none'; 
+        document.getElementById('start-overlay').style.display='flex'; 
+    } 
 }
+function startGame() { 
+    try { 
+        // サーバーから maxPlayers を取得するか、gameStateから読む
+        const maxP = gameState ? gameState.maxPlayers : 4;
+        const data = createBoardData(maxP); 
+        if(socket) { 
+            socket.emit('startGame', data); 
+            document.getElementById('start-btn-big').innerText="開始中..."; 
+        } 
+    } catch(e) { alert(e); } 
+}
+// (以下、前回と同じ)
+function playDiceAnim() { const ov = document.getElementById('dice-anim-overlay'); ov.style.display='flex'; const d1=document.getElementById('die1'), d2=document.getElementById('die2'); let c=0; const t = setInterval(()=>{ d1.innerText=Math.floor(Math.random()*6)+1; d2.innerText=Math.floor(Math.random()*6)+1; c++; if(c>8){ clearInterval(t); ov.style.display='none'; socket.emit('rollDice'); } },100); }
 function endTurn() { buildMode=null; updateBuildMsg(); socket.emit('endTurn'); }
 function sendTrade() { const g=document.getElementById('trade-give').value, r=document.getElementById('trade-receive').value; if(g===r) return alert('同じ資源'); socket.emit('trade',{give:g,receive:r}); }
 function buyCard() { if(gameState.diceResult) if(confirm('カード購入(羊1,小1,鉄1)')) socket.emit('buyCard'); }
 function playCard(t) { if(confirm(getCardName(t)+'を使用しますか？')) socket.emit('playCard',t); }
 function setBuildMode(mode) { if (!gameState || gameState.phase !== 'MAIN' || !gameState.diceResult) { alert("行動フェーズのみ"); return; } buildMode = (buildMode === mode) ? null : mode; updateBuildMsg(); }
-function updateBuildMsg() {
-    const div = document.getElementById('build-msg');
-    if (!buildMode) div.innerText = "";
-    else if (buildMode === 'road') div.innerText = "【建設】道";
-    else if (buildMode === 'settlement') div.innerText = "【建設】開拓地";
-    else if (buildMode === 'city') div.innerText = "【建設】都市化";
-}
+function updateBuildMsg() { const div = document.getElementById('build-msg'); if (!buildMode) div.innerText = ""; else if (buildMode === 'road') div.innerText = "【建設】道"; else if (buildMode === 'settlement') div.innerText = "【建設】開拓地"; else if (buildMode === 'city') div.innerText = "【建設】都市化"; }
 function getCardName(t) { return {knight:'騎士',road:'街道建設',plenty:'発見',monopoly:'独占',victory:'ポイント'}[t]; }
 
 if(socket) {
-    socket.on('gameStarted', s => { gameState=s; document.getElementById('start-overlay').style.display='none'; document.getElementById('controls').style.display='block'; render(); updateUI(); });
+    socket.on('gameStarted', s => { gameState=s; document.getElementById('start-overlay').style.display='none'; document.getElementById('controls').style.display='block'; resizeCanvas(); render(); updateUI(); });
     socket.on('updateState', s => { gameState=s; if(s.phase==='GAME_OVER') { document.getElementById('winner-name').innerText = s.winner.name; document.getElementById('winner-overlay').style.display='flex'; } render(); updateUI(); });
     socket.on('playSound', t => playSystemSound(t));
     socket.on('message', m => alert(m));
@@ -148,6 +206,7 @@ function updateUI() {
     const bankDiv=document.getElementById('bank-resources'); if(gameState.bank) bankDiv.innerHTML=Object.keys(gameState.bank).map(k=>`<div>${RESOURCE_INFO[k].icon} ${gameState.bank[k]}</div>`).join('');
     const myDiv=document.getElementById('my-resources'); const myPlayer=gameState.players.find(p=>p.id===myId);
     
+    // ★生産力パネルのUI被り修正 (表示場所を調整)
     const prodList = document.getElementById('prod-list');
     if (myPlayer && prodList && gameState.board.hexes) {
         const production = {};
@@ -167,13 +226,11 @@ function updateUI() {
         else if(cDiv) cDiv.innerHTML=myPlayer.cards.map(c=>`<div style="margin-top:2px;">${getCardName(c.type)} ${c.canUse?`<button onclick="playCard('${c.type}')" style="font-size:10px;">使用</button>`:'(待)'}</div>`).join('');
     }
     
-    // ★スコアボード
     const sb = document.getElementById('score-board');
     if(sb) {
         sb.innerHTML = gameState.players.map(p => `
             <div style="margin-bottom:4px; color:${p.color}; font-weight:bold;">
                 ${p.name}: ${p.victoryPoints}点 
-                <span style="font-size:10px; color:black;">(⚔️${p.armySize} 🛤️${p.roadLength})</span>
             </div>
         `).join('');
     }
@@ -196,6 +253,7 @@ function updateUI() {
     }
 }
 
+// ... (clickイベントは変更なし)
 canvas.addEventListener('click', e => {
     if(!gameState) return;
     const cur = gameState.players[gameState.turnIndex];
@@ -221,7 +279,7 @@ canvas.addEventListener('click', e => {
             let tE=null, minD=HEX_SIZE*0.3;
             gameState.board.edges.forEach(e=>{
                 const v1=gameState.board.vertices.find(v=>v.id===e.v1), v2=gameState.board.vertices.find(v=>v.id===e.v2);
-                const mx=(v1.x+v2.x)/2*HEX_SIZE, my=(v1.y+v2.y)/2*HEX_SIZE;
+                const mx=(v1.x*HEX_SIZE+v2.x*HEX_SIZE)/2, my=(v1.y*HEX_SIZE+v2.y*HEX_SIZE)/2;
                 const d=Math.hypot(mx-clickX, my-clickY);
                 if(d<minD){ minD=d; tE=e; }
             });

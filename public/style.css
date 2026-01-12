@@ -1,19 +1,18 @@
-/* ... 前略 (既存のCSSはそのまま) ... */
+/* ... (既存のCSSはそのまま) ... */
 
-/* ★勝利画面 */
-#winner-overlay {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(255, 215, 0, 0.8); /* ゴールド背景 */
-    display: flex; justify-content: center; align-items: center;
-    z-index: 10001; /* 最前面 */
-    pointer-events: auto;
+/* ★修正: 生産力パネルを右上に（スコアの下あたり） */
+#production-panel {
+    position: absolute; 
+    top: 350px; /* 少し下げる */
+    right: 20px; 
+    width: 220px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 8px; padding: 10px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
 }
-#winner-name {
-    font-size: 48px; color: #d32f2f; margin-bottom: 20px;
-    text-shadow: 2px 2px 4px white;
-}
+#production-panel h3 { margin: 0 0 5px 0; font-size: 16px; border-bottom: 1px solid #ddd; }
 
-/* ... 以下略 (前回と同じ) ... */
+/* ... (以下、前回と同じ) ... */
 body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: sans-serif; }
 #modal-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10000; pointer-events: none; }
 #modal-layer > * { pointer-events: auto; }
@@ -30,18 +29,22 @@ body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: sans
 #ui-layer > * { pointer-events: auto; }
 #log-container { position: absolute; top: 20px; left: 20px; width: 300px; background: rgba(255, 255, 255, 0.85); border-radius: 8px; padding: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
 #log-area { height: 150px; overflow-y: scroll; font-size: 14px; }
-#cost-table { position: absolute; bottom: 120px; left: 20px; width: 200px; background: rgba(255, 255, 255, 0.95); border-radius: 12px; padding: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-size: 14px; }
+#cost-table { position: absolute; bottom: 20px; left: 20px; width: 260px; background: rgba(255, 255, 255, 0.95); border-radius: 12px; padding: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-size: 16px; }
+#cost-table h3 { margin: 0 0 10px 0; border-bottom: 2px solid #ccc; font-size: 18px; }
+.cost-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: bold; }
+.build-btn { padding: 4px 8px; font-size: 12px; background: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; }
 #info-panel { position: absolute; top: 20px; right: 20px; width: 220px; display: flex; flex-direction: column; gap: 10px; }
 .panel-box { background: rgba(255, 255, 255, 0.9); border-radius: 8px; padding: 10px; }
-#production-panel { position: absolute; bottom: 120px; right: 20px; width: 180px; background: rgba(255, 255, 255, 0.9); border-radius: 8px; padding: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
 #status-bar { position: absolute; top: 0; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.9); padding: 5px 30px; border-bottom-left-radius: 15px; border-bottom-right-radius: 15px; text-align: center; font-weight: bold; }
-#controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.98); padding: 20px; border-radius: 20px; text-align: center; min-width: 600px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+#controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.98); padding: 25px; border-radius: 20px; text-align: center; min-width: 600px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
 .control-row { display: flex; justify-content: space-around; align-items: center; gap: 30px; }
-.dice-group button { padding: 10px 20px; font-size: 16px; margin: 0 5px; }
-.trade-ui select, .trade-ui button { padding: 8px; font-size: 14px; }
-.cost-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-weight: bold; }
-.build-btn { padding: 4px 8px; font-size: 12px; background: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; }
+.control-group { flex: 1; text-align: center; }
+.group-title { margin-bottom: 8px; font-weight: bold; font-size: 16px; color: #555; }
+.dice-group button { padding: 15px 30px; font-size: 18px; margin: 0 10px; border-radius: 8px; }
+.trade-ui { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.trade-ui select { padding: 10px; font-size: 16px; border-radius: 5px; }
+.trade-ui button { padding: 10px 20px; font-size: 16px; }
 #action-msg { color: #d32f2f; font-weight: bold; font-size: 20px; margin-bottom: 15px; }
-button { cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 5px; }
+button { cursor: pointer; background-color: #4CAF50; color: white; border: none; }
 button:disabled { background-color: #ccc; cursor: not-allowed; }
 input[type="text"] { padding: 10px; font-size: 16px; }
