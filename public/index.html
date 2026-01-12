@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catan AI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="modal-layer">
+        <div id="login-screen">
+            <h2>カタンへようこそ</h2>
+            <input type="text" id="username" placeholder="名前を入力" onkeydown="if(event.key==='Enter') joinGame()">
+            <button id="join-btn" onclick="joinGame()">参加する</button>
+        </div>
+        <div id="start-overlay" style="display:none;">
+            <div class="overlay-content">
+                <h2>準備完了</h2>
+                <button id="start-btn-big" onclick="startGame()" class="pulse-button">ゲーム開始</button>
+            </div>
+        </div>
+        <div id="dice-anim-overlay" style="display:none;">
+            <div class="dice-box"><div id="die1" class="die">?</div><div id="die2" class="die">?</div></div>
+        </div>
+        <div id="winner-overlay" style="display:none;">
+            <div class="overlay-content">
+                <h1 id="winner-name"></h1>
+                <p>の勝利です！</p>
+                <button onclick="location.reload()" class="pulse-button">もう一度遊ぶ</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <div id="log-container"><h3>ゲームログ</h3><div id="log-area"></div></div>
+        <div id="cost-table">
+            <h3>建設</h3>
+            <div class="cost-item"><button class="build-btn" onclick="setBuildMode('road')">道</button><span class="cost-res">🌲🧱</span></div>
+            <div class="cost-item"><button class="build-btn" onclick="setBuildMode('settlement')">開拓地</button><span class="cost-res">🌲🧱🌾🐑</span></div>
+            <div class="cost-item"><button class="build-btn" onclick="setBuildMode('city')">都市</button><span class="cost-res">🌾🌾⛰️⛰️⛰️</span></div>
+            <div class="cost-item"><button class="build-btn" onclick="buyCard()">カード</button><span class="cost-res">🌾🐑⛰️</span></div>
+            <div id="build-msg" style="color:red; font-size:14px; margin-top:5px; font-weight:bold;"></div>
+        </div>
+        
+        <div id="info-panel">
+            <div class="panel-box"><h3>🏦 銀行</h3><div id="bank-resources"></div></div>
+            <div class="panel-box"><h3>🎒 あなたの資源</h3><div id="my-resources"></div></div>
+            <div class="panel-box"><h3>🃏 発展カード</h3><div id="my-cards" style="font-size:12px;">なし</div></div>
+            <div class="panel-box">
+                <h3>🏆 スコア</h3>
+                <div id="score-board" style="font-size:12px;"></div>
+            </div>
+            <div class="panel-box" style="text-align:center;"><h3>🔊 音量</h3><input type="range" id="volume-slider" min="0" max="1" step="0.1" value="0.3" style="width:100%;"></div>
+        </div>
+
+        <div id="production-panel"><h3>生産力</h3><div id="prod-list" style="font-size:13px; color:#333;"></div></div>
+        <div id="status-bar"><h2>Catan</h2><div id="game-info">待機中...</div></div>
+
+        <div id="controls" style="display:none;">
+            <div id="action-msg"></div>
+            <div id="main-controls" style="display:none;">
+                <div class="control-row">
+                    <div class="control-group dice-group">
+                        <div class="group-title">アクション</div>
+                        <button id="roll-btn" onclick="playDiceAnim()">🎲 サイコロ</button>
+                        <button id="end-turn-btn" onclick="endTurn()" disabled>終了</button>
+                    </div>
+                    <div class="control-group trade-group">
+                        <div class="group-title">🏦 貿易</div>
+                        <div class="trade-ui">
+                            <select id="trade-give"><option value="forest">🌲</option><option value="hill">🧱</option><option value="mountain">⛰️</option><option value="field">🌾</option><option value="pasture">🐑</option></select>
+                            ➡ <select id="trade-receive"><option value="forest">🌲</option><option value="hill">🧱</option><option value="mountain">⛰️</option><option value="field">🌾</option><option value="pasture">🐑</option></select>
+                            <button id="trade-btn" onclick="sendTrade()" disabled>交換</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

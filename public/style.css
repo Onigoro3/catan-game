@@ -1,0 +1,47 @@
+/* ... 前略 (既存のCSSはそのまま) ... */
+
+/* ★勝利画面 */
+#winner-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(255, 215, 0, 0.8); /* ゴールド背景 */
+    display: flex; justify-content: center; align-items: center;
+    z-index: 10001; /* 最前面 */
+    pointer-events: auto;
+}
+#winner-name {
+    font-size: 48px; color: #d32f2f; margin-bottom: 20px;
+    text-shadow: 2px 2px 4px white;
+}
+
+/* ... 以下略 (前回と同じ) ... */
+body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: sans-serif; }
+#modal-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10000; pointer-events: none; }
+#modal-layer > * { pointer-events: auto; }
+#login-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 40px; border-radius: 15px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 2px solid #ddd; }
+#start-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; pointer-events: auto; }
+.overlay-content { background: white; padding: 50px; border-radius: 20px; text-align: center; box-shadow: 0 15px 40px rgba(0,0,0,0.5); min-width: 350px; }
+.pulse-button { font-size: 28px; padding: 20px 50px; background: #FF5722; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; box-shadow: 0 6px 0 #E64A19; transition: transform 0.1s; }
+.pulse-button:active { transform: translateY(6px); box-shadow: none; }
+#dice-anim-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.3); pointer-events: none; }
+.dice-box { display: flex; gap: 20px; }
+.die { width: 80px; height: 80px; background: white; border-radius: 10px; display: flex; justify-content: center; align-items: center; font-size: 40px; font-weight: bold; border: 2px solid #333; box-shadow: 5px 5px 15px rgba(0,0,0,0.5); animation: shake 0.5s infinite; }
+@keyframes shake { 0% { transform: rotate(0deg); } 25% { transform: rotate(10deg); } 50% { transform: rotate(-10deg); } 75% { transform: rotate(5deg); } 100% { transform: rotate(0deg); } }
+#ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100; }
+#ui-layer > * { pointer-events: auto; }
+#log-container { position: absolute; top: 20px; left: 20px; width: 300px; background: rgba(255, 255, 255, 0.85); border-radius: 8px; padding: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+#log-area { height: 150px; overflow-y: scroll; font-size: 14px; }
+#cost-table { position: absolute; bottom: 120px; left: 20px; width: 200px; background: rgba(255, 255, 255, 0.95); border-radius: 12px; padding: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-size: 14px; }
+#info-panel { position: absolute; top: 20px; right: 20px; width: 220px; display: flex; flex-direction: column; gap: 10px; }
+.panel-box { background: rgba(255, 255, 255, 0.9); border-radius: 8px; padding: 10px; }
+#production-panel { position: absolute; bottom: 120px; right: 20px; width: 180px; background: rgba(255, 255, 255, 0.9); border-radius: 8px; padding: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+#status-bar { position: absolute; top: 0; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.9); padding: 5px 30px; border-bottom-left-radius: 15px; border-bottom-right-radius: 15px; text-align: center; font-weight: bold; }
+#controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.98); padding: 20px; border-radius: 20px; text-align: center; min-width: 600px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+.control-row { display: flex; justify-content: space-around; align-items: center; gap: 30px; }
+.dice-group button { padding: 10px 20px; font-size: 16px; margin: 0 5px; }
+.trade-ui select, .trade-ui button { padding: 8px; font-size: 14px; }
+.cost-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-weight: bold; }
+.build-btn { padding: 4px 8px; font-size: 12px; background: #008CBA; color: white; border: none; border-radius: 4px; cursor: pointer; }
+#action-msg { color: #d32f2f; font-weight: bold; font-size: 20px; margin-bottom: 15px; }
+button { cursor: pointer; background-color: #4CAF50; color: white; border: none; border-radius: 5px; }
+button:disabled { background-color: #ccc; cursor: not-allowed; }
+input[type="text"] { padding: 10px; font-size: 16px; }
