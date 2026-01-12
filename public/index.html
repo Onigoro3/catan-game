@@ -2,17 +2,15 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Catan AI</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <button onclick="resetGame()" style="position:absolute; top:5px; right:5px; z-index:2000; padding:5px 10px; font-size:10px; background:#666;">🔄 リセット</button>
-
     <div id="modal-layer">
         <div id="login-screen">
             <h2>カタンへようこそ</h2>
-            <div id="connection-status" style="color: #666; font-size: 12px; margin-bottom: 10px;">サーバー接続中...</div>
+            <div id="connection-status">サーバー接続中...</div>
             <input type="text" id="username" placeholder="名前を入力">
             <div style="margin-top:10px;">
                 <label>プレイ人数: </label>
@@ -24,7 +22,7 @@
                     <option value="6">6人 (拡張)</option>
                 </select>
             </div>
-            <button id="join-btn" onclick="joinGame()" style="margin-top:15px;" disabled>参加する</button>
+            <button id="join-btn" onclick="joinGame()" disabled>参加する</button>
         </div>
         <div id="start-overlay" style="display:none;">
             <div class="overlay-content">
@@ -45,49 +43,84 @@
     </div>
 
     <div id="ui-layer">
-        <div id="log-container"><h3>ゲームログ</h3><div id="log-area"></div></div>
-        
-        <div id="cost-table">
-            <h3>建設</h3>
-            <div class="cost-item"><button class="build-btn" onclick="setBuildMode('road')">道</button><span class="cost-res">🌲🧱</span></div>
-            <div class="cost-item"><button class="build-btn" onclick="setBuildMode('settlement')">開拓地</button><span class="cost-res">🌲🧱🌾🐑</span></div>
-            <div class="cost-item"><button class="build-btn" onclick="setBuildMode('city')">都市</button><span class="cost-res">🌾🌾⛰️⛰️⛰️</span></div>
-            <div class="cost-item"><button class="build-btn" onclick="buyCard()">カード</button><span class="cost-res">🌾🐑⛰️</span></div>
-            <div id="build-msg"></div>
-        </div>
-        
-        <div id="info-panel">
-            <div class="panel-box"><h3>🏦 銀行</h3><div id="bank-resources"></div></div>
-            <div class="panel-box"><h3>🎒 あなたの資源</h3><div id="my-resources"></div></div>
-            <div class="panel-box"><h3>🃏 発展カード</h3><div id="my-cards" style="font-size:12px;">なし</div></div>
-            <div class="panel-box"><h3>🏆 スコア</h3><div id="score-board" style="font-size:12px;"></div></div>
-            <div class="panel-box"><h3>生産力</h3><div id="prod-list" style="font-size:13px; color:#333;"></div></div>
-            <div class="panel-box" style="text-align:center;"><h3>🔊 音量</h3><input type="range" id="volume-slider" min="0" max="1" step="0.1" value="0.3" style="width:100%;"></div>
+        <div id="app-header">
+            <div id="game-info">待機中...</div>
+            <button id="menu-btn" onclick="toggleMenu()">☰ メニュー</button>
         </div>
 
-        <div id="status-bar"><h2>Catan</h2><div id="game-info">待機中...</div></div>
+        <div id="mini-status">
+            <div id="my-simple-res">🎒 木0 土0 鉄0 麦0 羊0</div>
+            <div id="my-simple-score">🏆 0点</div>
+        </div>
+
+        <div id="side-menu" class="hidden">
+            <div class="menu-content">
+                <button class="close-btn" onclick="toggleMenu()">×</button>
+                
+                <div class="panel-box">
+                    <h3>あなたの詳細</h3>
+                    <div id="my-resources"></div>
+                    <div id="my-cards" style="font-size:12px; margin-top:5px;">なし</div>
+                </div>
+
+                <div class="panel-box">
+                    <h3>🏦 銀行</h3>
+                    <div id="bank-resources"></div>
+                </div>
+
+                <div class="panel-box">
+                    <h3>生産力</h3>
+                    <div id="prod-list"></div>
+                </div>
+
+                <div class="panel-box">
+                    <h3>スコアボード</h3>
+                    <div id="score-board"></div>
+                </div>
+
+                <div class="panel-box">
+                    <h3>ゲームログ</h3>
+                    <div id="log-area"></div>
+                </div>
+
+                <div class="panel-box" style="text-align:center;">
+                    <h3>設定</h3>
+                    <label>音量</label>
+                    <input type="range" id="volume-slider" min="0" max="1" step="0.1" value="0.3">
+                    <br><br>
+                    <button onclick="resetGame()" style="background:#666; font-size:12px;">🔄 ゲームリセット</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="build-controls">
+            <div class="build-icons">
+                <button class="b-btn" onclick="setBuildMode('road')">🛣️<br>道</button>
+                <button class="b-btn" onclick="setBuildMode('settlement')">🏠<br>開拓</button>
+                <button class="b-btn" onclick="setBuildMode('city')">🏰<br>都市</button>
+                <button class="b-btn" onclick="buyCard()">🃏<br>カード</button>
+            </div>
+            <div id="build-msg"></div>
+        </div>
 
         <div id="controls" style="display:none;">
             <div id="action-msg"></div>
             <div id="main-controls" style="display:none;">
-                <div class="control-row">
-                    <div class="control-group dice-group">
-                        <div class="group-title">アクション</div>
-                        <button id="roll-btn" onclick="playDiceAnim()">🎲 サイコロ</button>
-                        <button id="end-turn-btn" onclick="endTurn()" disabled>終了</button>
-                    </div>
-                    <div class="control-group trade-group">
-                        <div class="group-title">🏦 貿易</div>
-                        <div class="trade-ui">
-                            <select id="trade-give"><option value="forest">🌲</option><option value="hill">🧱</option><option value="mountain">⛰️</option><option value="field">🌾</option><option value="pasture">🐑</option></select>
-                            ➡ <select id="trade-receive"><option value="forest">🌲</option><option value="hill">🧱</option><option value="mountain">⛰️</option><option value="field">🌾</option><option value="pasture">🐑</option></select>
-                            <button id="trade-btn" onclick="sendTrade()" disabled>交換</button>
-                        </div>
-                    </div>
+                <div class="action-row">
+                    <button id="roll-btn" onclick="playDiceAnim()">🎲 振る</button>
+                    <button id="end-turn-btn" onclick="endTurn()" disabled>終了</button>
+                </div>
+                <div class="trade-row">
+                    <div style="font-size:10px; font-weight:bold;">貿易</div>
+                    <select id="trade-give"><option value="forest">🌲</option><option value="hill">🧱</option><option value="mountain">⛰️</option><option value="field">🌾</option><option value="pasture">🐑</option></select>
+                    ➡
+                    <select id="trade-receive"><option value="forest">🌲</option><option value="hill">🧱</option><option value="mountain">⛰️</option><option value="field">🌾</option><option value="pasture">🐑</option></select>
+                    <button id="trade-btn" onclick="sendTrade()" disabled>交換</button>
                 </div>
             </div>
         </div>
     </div>
+
     <canvas id="gameCanvas"></canvas>
     <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>

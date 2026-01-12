@@ -26,10 +26,10 @@ function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ORIGIN_X = canvas.width / 2;
-    ORIGIN_Y = canvas.height * 0.45;
+    ORIGIN_Y = canvas.height / 2; // 真ん中に戻す（UIが四隅に散らばったため）
     const minDim = Math.min(canvas.width, canvas.height);
-    const scaleFactor = (gameState && gameState.maxPlayers > 4) ? 16 : 13;
-    HEX_SIZE = Math.max(30, minDim / scaleFactor);
+    const scaleFactor = (gameState && gameState.maxPlayers > 4) ? 15 : 12; // 少し小さめにして全体が見えるように
+    HEX_SIZE = Math.max(28, minDim / scaleFactor);
     if (gameState) render();
 }
 window.addEventListener('resize', resizeCanvas);
@@ -41,14 +41,20 @@ function playSystemSound(type) {
     new Audio(`sounds/${type}.mp3`).play().catch(()=>{});
 }
 
-// リセット機能
+// メニュー開閉
+function toggleMenu() {
+    const menu = document.getElementById('side-menu');
+    menu.classList.toggle('hidden');
+}
+
 function resetGame() {
     if(confirm("本当にゲームをリセットして最初から始めますか？")) {
         socket.emit('resetGame');
+        toggleMenu();
     }
 }
 
-// ... (createBoardData などは前回と同じため省略せず記述)
+// ... (createBoardDataは前回と同じ) ...
 function createBoardData(maxPlayers = 4) {
     const hexes=[],vertices=[],edges=[],ports=[]; let id=0;
     let mapDef;
@@ -201,18 +207,18 @@ function updateUI() {
 
     if(myPlayer) {
         myDiv.innerHTML=Object.keys(myPlayer.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${myPlayer.resources[k]}</div>`).join('');
+        // 簡易表示用
+        document.getElementById('my-simple-res').innerText = `🎒 木${myPlayer.resources.forest} 土${myPlayer.resources.hill} 鉄${myPlayer.resources.mountain} 麦${myPlayer.resources.field} 羊${myPlayer.resources.pasture}`;
+        document.getElementById('my-simple-score').innerText = `🏆 ${myPlayer.victoryPoints}点`;
+
         const cDiv=document.getElementById('my-cards');
         if(cDiv && myPlayer.cards.length===0) cDiv.innerHTML='なし';
         else if(cDiv) cDiv.innerHTML=myPlayer.cards.map(c=>`<div style="margin-top:2px;">${getCardName(c.type)} ${c.canUse?`<button onclick="playCard('${c.type}')" style="font-size:10px;">使用</button>`:'(待)'}</div>`).join('');
     }
+    
     const sb = document.getElementById('score-board');
-    if(sb) {
-        sb.innerHTML = gameState.players.map(p => `
-            <div style="margin-bottom:4px; color:${p.color}; font-weight:bold;">
-                ${p.name}: ${p.victoryPoints}点 
-            </div>
-        `).join('');
-    }
+    if(sb) sb.innerHTML = gameState.players.map(p => `<div style="margin-bottom:4px; color:${p.color}; font-weight:bold;">${p.name}: ${p.victoryPoints}点</div>`).join('');
+
     const info=document.getElementById('game-info'); const msg=document.getElementById('action-msg'); const mainCtrl=document.getElementById('main-controls');
     const cur=gameState.players[gameState.turnIndex]; if(!cur) return;
     info.innerHTML=`手番: <span style="color:${cur.color}">${cur.name}</span> (${gameState.phase})`;
