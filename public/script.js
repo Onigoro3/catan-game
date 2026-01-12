@@ -1,4 +1,10 @@
-let socket; try { socket = io(); } catch (e) { alert('サーバー接続エラー'); }
+let socket;
+try {
+    socket = io();
+} catch (e) {
+    console.error(e);
+    alert('サーバー接続エラー');
+}
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -19,32 +25,28 @@ function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ORIGIN_X = canvas.width / 2;
-    ORIGIN_Y = canvas.height / 2;
+    ORIGIN_Y = canvas.height * 0.45;
     const minDim = Math.min(canvas.width, canvas.height);
-    // マップサイズ調整
     const scaleFactor = (gameState && gameState.maxPlayers > 4) ? 16 : 13;
-    HEX_SIZE = Math.max(40, minDim / scaleFactor);
+    HEX_SIZE = Math.max(30, minDim / scaleFactor);
     if (gameState) render();
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 function playSystemSound(type) {
-    const volInput = document.getElementById('volume-slider');
-    const vol = volInput ? volInput.value : 0.3;
+    const vol = document.getElementById('volume-slider') ? document.getElementById('volume-slider').value : 0.3;
     if (vol <= 0) return;
     new Audio(`sounds/${type}.mp3`).play().catch(()=>{});
 }
 
-// ★修正: 変数を全て最初に宣言してエラーを防ぐ
 function createBoardData(maxPlayers = 4) {
     const hexes = [];
     const vertices = [];
     const edges = [];
-    const ports = []; // ★ここで宣言
+    const ports = []; // ★定義漏れを防ぐ
     let id = 0;
     
-    // マップ定義
     let mapDef;
     if (maxPlayers > 4) {
         mapDef=[{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}];
@@ -58,26 +60,22 @@ function createBoardData(maxPlayers = 4) {
         hexes.push({id:id++,q,r,x,y,resource:null,number:0});
     }});
 
-    // 資源と数字
     let resBase = ['forest','forest','forest','forest','hill','hill','hill','mountain','mountain','mountain','field','field','field','field','pasture','pasture','pasture','pasture','desert'];
     if (maxPlayers > 4) { resBase = [...resBase, 'forest','forest','hill','hill','mountain','mountain','field','field','pasture','pasture','desert']; }
     const res = resBase.sort(()=>Math.random()-0.5);
     
     let numsBase = [5,2,6,3,8,10,9,12,11,4,8,10,9,4,5,6,3,11];
     if (maxPlayers > 4) { numsBase = [...numsBase, 2,3,4,5,6,8,9,10,11,12]; }
-    const nums = numsBase; // 順不同でもOK
+    const nums = numsBase;
 
     let ri=0,ni=0;
     hexes.forEach(h=>{ h.resource = res[ri++] || 'desert'; if(h.resource==='desert') h.number=0; else h.number=nums[ni++]||7; });
 
-    // 頂点生成
     const rawV=[]; hexes.forEach(h=>{ for(let i=0;i<6;i++){ const r=Math.PI/180*(60*i-30); rawV.push({x:h.x+Math.cos(r), y:h.y+Math.sin(r)}); }});
     rawV.forEach(rv=>{ if(!vertices.find(v=>Math.hypot(v.x-rv.x,v.y-rv.y)<0.1)) vertices.push({id:vertices.length,x:rv.x,y:rv.y,owner:null,type:'none'}); });
     
-    // 辺生成
     for(let i=0;i<vertices.length;i++){ for(let j=i+1;j<vertices.length;j++){ if(Math.hypot(vertices[i].x-vertices[j].x, vertices[i].y-vertices[j].y) < 1.1) edges.push({id:edges.length,v1:vertices[i].id,v2:vertices[j].id,owner:null}); }}
     
-    // 港生成
     const outer=vertices.filter(v=>Math.hypot(v.x,v.y) > (maxPlayers>4 ? 3.2 : 2.4)).sort((a,b)=>Math.atan2(a.y,a.x)-Math.atan2(b.y,b.x));
     const typeList=['any','pasture','any','forest','any','hill','any','field','mountain'];
     const portTypes = maxPlayers > 4 ? [...typeList, 'any', 'any'] : typeList;
@@ -87,29 +85,21 @@ function createBoardData(maxPlayers = 4) {
         const mx=(outer[i].x+outer[i+1].x)/2, my=(outer[i].y+outer[i+1].y)/2, ang=Math.atan2(my,mx);
         ports.push({type:portTypes[pi++],v1:outer[i].id,v2:outer[i+1].id,x:mx+0.4*Math.cos(ang),y:my+0.4*Math.sin(ang)});
     }}
-    
     return {hexes,vertices,edges,ports};
 }
 
 // UI Actions
-function joinGame() { 
-    const name = document.getElementById('username').value;
-    const maxP = document.getElementById('player-count').value;
-    if(name && socket) { 
-        socket.emit('joinGame', {name, maxPlayers: maxP}); 
-        document.getElementById('login-screen').style.display='none'; 
-        document.getElementById('start-overlay').style.display='flex'; 
-    } 
-}
+function joinGame() { const name = document.getElementById('username').value; const maxP = document.getElementById('player-count').value; if(name && socket) { socket.emit('joinGame', {name, maxPlayers: maxP}); document.getElementById('login-screen').style.display='none'; document.getElementById('start-overlay').style.display='flex'; } }
 function startGame() { 
     try { 
         const maxP = gameState && gameState.maxPlayers ? gameState.maxPlayers : 4;
         const data = createBoardData(maxP); 
         if(socket) { 
             socket.emit('startGame', data); 
-            document.getElementById('start-btn-big').innerText="開始中..."; 
+            const btn = document.getElementById('start-btn-big');
+            if(btn) { btn.innerText="開始中..."; btn.disabled=true; }
         } 
-    } catch(e) { alert("Error: " + e); } 
+    } catch(e) { alert("Map Gen Error: "+e); } 
 }
 function playDiceAnim() { const ov = document.getElementById('dice-anim-overlay'); ov.style.display='flex'; const d1=document.getElementById('die1'), d2=document.getElementById('die2'); let c=0; const t = setInterval(()=>{ d1.innerText=Math.floor(Math.random()*6)+1; d2.innerText=Math.floor(Math.random()*6)+1; c++; if(c>8){ clearInterval(t); ov.style.display='none'; socket.emit('rollDice'); } },100); }
 function endTurn() { buildMode=null; updateBuildMsg(); socket.emit('endTurn'); }
@@ -125,6 +115,7 @@ if(socket) {
     socket.on('updateState', s => { gameState=s; if(s.phase==='GAME_OVER') { document.getElementById('winner-name').innerText = s.winner.name; document.getElementById('winner-overlay').style.display='flex'; } render(); updateUI(); });
     socket.on('playSound', t => playSystemSound(t));
     socket.on('message', m => alert(m));
+    socket.on('error', m => { alert(m); document.getElementById('start-btn-big').disabled = false; document.getElementById('start-btn-big').innerText = "ゲーム開始"; });
     socket.on('connect', () => myId=socket.id);
 }
 
@@ -188,6 +179,7 @@ function updateUI() {
     const bankDiv=document.getElementById('bank-resources'); if(gameState.bank) bankDiv.innerHTML=Object.keys(gameState.bank).map(k=>`<div>${RESOURCE_INFO[k].icon} ${gameState.bank[k]}</div>`).join('');
     const myDiv=document.getElementById('my-resources'); const myPlayer=gameState.players.find(p=>p.id===myId);
     
+    // 生産力パネル (UI被り修正版: 同じパネル内に表示)
     const prodList = document.getElementById('prod-list');
     if (myPlayer && prodList && gameState.board.hexes) {
         const production = {};
@@ -197,7 +189,7 @@ function updateUI() {
             if (isAdj) { if (!production[h.number]) production[h.number] = []; const icon = RESOURCE_INFO[h.resource].icon; if(production[h.number].filter(x => x === icon).length < 2) production[h.number].push(icon); }
         });
         const nums = Object.keys(production).sort((a,b)=>a-b);
-        prodList.innerHTML = nums.map(n => `<div><strong>${n}:</strong> ${production[n].join('')}</div>`).join('');
+        prodList.innerHTML = nums.length > 0 ? nums.map(n => `<div><strong>${n}:</strong> ${production[n].join('')}</div>`).join('') : "なし";
     }
 
     if(myPlayer) {
