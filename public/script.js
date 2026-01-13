@@ -1,5 +1,24 @@
 let socket; try { socket = io(); } catch (e) { console.error(e); }
 
+// ★URLから部屋名を取得して自動入力
+window.onload = function() {
+    const params = new URLSearchParams(window.location.search);
+    const roomParam = params.get('room');
+    if (roomParam) {
+        document.getElementById('roomname').value = roomParam;
+    }
+    resizeCanvas();
+};
+
+// ★招待URLコピー機能
+function copyInviteLink() {
+    const room = document.getElementById('roomname').value || 'default';
+    const url = `${window.location.origin}${window.location.pathname}?room=${room}`;
+    navigator.clipboard.writeText(url).then(() => {
+        alert("招待URLをコピーしました！\n友達に送って同じ部屋で遊びましょう。\n" + url);
+    });
+}
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -31,7 +50,6 @@ function resizeCanvas() {
     if (gameState) render();
 }
 window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
 
 function playSystemSound(type) {
     const vol = document.getElementById('pc-volume') ? document.getElementById('pc-volume').value : 0.3;
@@ -41,15 +59,12 @@ function playSystemSound(type) {
 
 function toggleMenu() { document.getElementById('side-menu').classList.toggle('hidden'); }
 function syncVolume(val) { const pc=document.getElementById('pc-volume'), mob=document.getElementById('mobile-volume'); if(pc)pc.value=val; if(mob)mob.value=val; }
-function resetGame() { if(confirm("リセットしますか？")) { socket.emit('resetGame'); toggleMenu(); } }
+function resetGame() { if(confirm("【重要】ゲームをリセットしますか？\n全員の画面が初期化されます。")) { socket.emit('resetGame'); if(window.innerWidth<600) toggleMenu(); } }
 
-// --- ★ランダムマップ生成 ---
 function createBoardData(maxPlayers = 4, type = 'standard') {
     const hexes=[],vertices=[],edges=[],ports=[]; let id=0;
     
-    // ヘックス座標生成
     if (type === 'random') {
-        // 不定形生成: (0,0)からランダムウォークでタイルを増やす
         const targetCount = maxPlayers > 4 ? 30 : 19;
         const qrs = new Set(['0,0']);
         const dirs = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
@@ -65,7 +80,6 @@ function createBoardData(maxPlayers = 4, type = 'standard') {
             hexes.push({id:id++,q,r,x,y,resource:null,number:0});
         });
     } else {
-        // 定型マップ
         let mapDef;
         if (maxPlayers > 4) mapDef=[{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}];
         else mapDef=[{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
@@ -76,37 +90,25 @@ function createBoardData(maxPlayers = 4, type = 'standard') {
         }});
     }
 
-    // 資源と数字
     const count = hexes.length;
-    // 比率に合わせて資源生成
     const baseRes = ['forest','hill','mountain','field','pasture'];
-    const resList = [];
-    // 砂漠は1つ
-    resList.push('desert');
+    const resList = ['desert'];
     for(let i=0; i<count-1; i++) resList.push(baseRes[i % 5]);
     const res = resList.sort(()=>Math.random()-0.5);
     
-    // 数字 (6,8が隣り合わない等のロジックは省略し完全ランダム配置)
     const baseNums = [2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12];
     const numList = [];
     let ni = 0;
-    while(numList.length < count) {
-        numList.push(baseNums[ni % baseNums.length]);
-        ni++;
-    }
-    const nums = numList.sort(()=>Math.random()-0.5); // シャッフル
+    while(numList.length < count) { numList.push(baseNums[ni % baseNums.length]); ni++; }
+    const nums = numList.sort(()=>Math.random()-0.5);
 
     let ri=0, n_idx=0;
     hexes.forEach(h=>{ h.resource = res[ri++]; if(h.resource==='desert') h.number=0; else h.number=nums[n_idx++]; });
 
-    // 頂点・辺
     const rawV=[]; hexes.forEach(h=>{ for(let i=0;i<6;i++){ const r=Math.PI/180*(60*i-30); rawV.push({x:h.x+Math.cos(r), y:h.y+Math.sin(r)}); }});
     rawV.forEach(rv=>{ if(!vertices.find(v=>Math.hypot(v.x-rv.x,v.y-rv.y)<0.1)) vertices.push({id:vertices.length,x:rv.x,y:rv.y,owner:null,type:'none'}); });
     for(let i=0;i<vertices.length;i++){ for(let j=i+1;j<vertices.length;j++){ if(Math.hypot(vertices[i].x-vertices[j].x, vertices[i].y-vertices[j].y) < 1.1) edges.push({id:edges.length,v1:vertices[i].id,v2:vertices[j].id,owner:null}); }}
     
-    // 港 (外周判定)
-    // 中心(0,0)からの距離で判定するが、不定形の場合は「接続するヘックスが2つ以下」の頂点を外周とみなす簡易判定
-    // 今回は重心からの距離で簡易判定
     let cx=0, cy=0; vertices.forEach(v=>{cx+=v.x; cy+=v.y;}); cx/=vertices.length; cy/=vertices.length;
     const outer=vertices.filter(v=>Math.hypot(v.x-cx,v.y-cy) > (type==='random' ? 2.0 : (maxPlayers>4?3.2:2.4))).sort((a,b)=>Math.atan2(a.y-cy,a.x-cx)-Math.atan2(b.y-cy,b.x-cx));
     const portTypes = ['any','pasture','any','forest','any','hill','any','field','mountain','any','any'];
@@ -118,7 +120,6 @@ function createBoardData(maxPlayers = 4, type = 'standard') {
     return {hexes,vertices,edges,ports};
 }
 
-// UI Actions
 function joinGame() {
     const name = document.getElementById('username').value;
     const room = document.getElementById('roomname').value;
@@ -153,7 +154,7 @@ function sendChat() { const input = document.getElementById('chat-input'); if(in
 if(socket) {
     socket.on('connect', () => { myId = socket.id; const st=document.getElementById('connection-status'); if(st){st.innerText="🟢 接続完了"; st.style.color="green"; document.getElementById('join-btn').disabled=false;} });
     socket.on('disconnect', () => { const st=document.getElementById('connection-status'); if(st){st.innerText="🔴 切断中"; st.style.color="red"; document.getElementById('join-btn').disabled=true;} });
-    socket.on('gameStarted', s => { gameState=s; document.getElementById('start-overlay').style.display='none'; document.getElementById('controls').style.display='block'; initCanvas(); render(); updateUI(); });
+    socket.on('gameStarted', s => { gameState=s; document.getElementById('start-overlay').style.display='none'; document.getElementById('controls').style.display='block'; resizeCanvas(); render(); updateUI(); });
     socket.on('updateState', s => { 
         gameState=s; 
         if(s.phase==='GAME_OVER') {
@@ -189,7 +190,6 @@ canvas.addEventListener('touchstart', e => { if(e.touches.length===1){isDragging
 canvas.addEventListener('touchmove', e => { e.preventDefault(); if(e.touches.length===1&&isDragging){ camera.x+=e.touches[0].clientX-lastPointer.x; camera.y+=e.touches[0].clientY-lastPointer.y; lastPointer={x:e.touches[0].clientX,y:e.touches[0].clientY}; render(); } else if(e.touches.length===2){ const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; const dist=Math.sqrt(dx*dx+dy*dy); camera.zoom=Math.min(Math.max(camera.zoom+(dist-lastPinchDist)*0.005,0.5),3.0); lastPinchDist=dist; render(); } }, {passive:false});
 canvas.addEventListener('touchend', ()=>isDragging=false);
 
-// 描画
 function render() {
     if(!gameState || !gameState.board.hexes) return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -251,7 +251,7 @@ function updateUI() {
     const isMobile = window.innerWidth < 600;
     const myPlayer = gameState.players.find(p=>p.id===myId);
     
-    // 港チェック (4:1表示を上書き)
+    // 港レート
     let rate = "4:1";
     if (myPlayer) {
         let has31 = false;
@@ -264,14 +264,14 @@ function updateUI() {
         });
         if(has31) rate = "3:1" + rate.replace("4:1","");
     }
-    const rateMsg = `レート: ${rate}`;
     const rateEl = document.getElementById('trade-rate-msg');
-    if(rateEl) rateEl.innerText = rateMsg;
+    if(rateEl) rateEl.innerText = `レート: ${rate}`;
 
     const logsHTML = gameState.logs ? gameState.logs.map(l=>`<div>${l}</div>`).join('') : "";
     const bankHTML = gameState.bank ? Object.keys(gameState.bank).map(k=>`<div>${RESOURCE_INFO[k].icon} ${gameState.bank[k]}</div>`).join('') : "";
     const myResHTML = myPlayer ? Object.keys(myPlayer.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${myPlayer.resources[k]}</div>`).join('') : "";
     const myCardsHTML = (myPlayer && myPlayer.cards.length>0) ? myPlayer.cards.map(c=>`<div style="margin-top:2px;">${getCardName(c.type)} ${c.canUse?`<button onclick="playCard('${c.type}')" style="font-size:10px;">使用</button>`:'(待)'}</div>`).join('') : "なし";
+    
     let prodHTML = "";
     if (myPlayer && gameState.board.hexes) {
         const prod = {};
@@ -324,7 +324,6 @@ function updateUI() {
     }
 }
 
-// クリック判定 (カメラ対応)
 canvas.addEventListener('click', e => {
     if(!gameState || isDragging) return;
     const cur = gameState.players[gameState.turnIndex];
