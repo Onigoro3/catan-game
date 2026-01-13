@@ -140,5 +140,26 @@ select, input { border-radius: 4px; border: 1px solid #ccc; padding: 5px; }
         width: 100%; text-align: center; /* 改行して表示 */
     }
 }
+/* ... (前回までのスタイルは維持) ... */
+
+.setting-row { margin: 10px 0; display: flex; justify-content: space-between; align-items: center; }
+.setting-row select { width: 60%; }
+
+/* バースト画面 */
+#burst-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 10001;
+}
+#burst-selector { margin: 20px 0; }
+#burst-selector button { padding: 5px 10px; margin: 0 5px; background: #666; }
+
+/* トレード申請画面 */
+#trade-req-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9000;
+}
+
+#result-stats h3 { border-bottom: 1px solid #ccc; }
+#timer-display, #pc-timer { font-family: monospace; font-size: 1.2em; }
 
 }
