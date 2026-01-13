@@ -1,102 +1,101 @@
-/* 基本設定 */
+/* ベース */
 body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Segoe UI', sans-serif; touch-action: none; }
 button { cursor: pointer; border: none; border-radius: 5px; font-weight: bold; color: white; background: #4CAF50; }
 button:disabled { background: #ccc; cursor: not-allowed; }
 select, input { border-radius: 4px; border: 1px solid #ccc; padding: 5px; }
 
-/* --- ヘッダー --- */
-#app-header {
-    position: absolute; top: 0; left: 0; width: 100%; height: 40px;
-    background: rgba(255, 255, 255, 0.9); display: flex; justify-content: space-between; align-items: center;
-    padding: 0 10px; box-sizing: border-box; z-index: 500;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-#game-info { font-weight: bold; font-size: 14px; }
-#menu-btn { background: #333; font-size: 12px; padding: 5px 10px; }
-
-/* --- 簡易ステータス (常時表示) --- */
-#mini-status {
-    position: absolute; top: 45px; left: 10px;
-    background: rgba(255, 255, 255, 0.8); padding: 5px 10px; border-radius: 15px;
-    font-size: 12px; font-weight: bold; pointer-events: none; z-index: 100;
-}
-
-/* --- スライドメニュー (右から出てくる) --- */
-#side-menu {
-    position: absolute; top: 0; right: 0; width: 280px; height: 100%;
-    background: rgba(255, 255, 255, 0.98); z-index: 2000;
-    transform: translateX(0); transition: transform 0.3s;
-    box-shadow: -2px 0 10px rgba(0,0,0,0.2);
-    overflow-y: auto; display: flex; flex-direction: column;
-}
-#side-menu.hidden { transform: translateX(100%); }
-.menu-content { padding: 15px; padding-top: 50px; }
-.close-btn {
-    position: absolute; top: 10px; right: 10px;
-    background: transparent; color: #333; font-size: 24px; padding: 0 10px;
-}
-.panel-box { background: #f0f0f0; border-radius: 8px; padding: 10px; margin-bottom: 15px; }
-.panel-box h3 { margin: 0 0 5px 0; font-size: 14px; border-bottom: 1px solid #ccc; }
-#log-area { height: 100px; overflow-y: auto; font-size: 11px; background: white; padding: 5px; }
-
-/* --- 建設コントロール (左下) --- */
-#build-controls {
-    position: absolute; bottom: 10px; left: 10px; z-index: 400;
-}
-.build-icons { display: flex; gap: 5px; }
-.b-btn {
-    background: white; color: #333; border: 2px solid #ccc;
-    width: 50px; height: 50px; font-size: 10px; line-height: 1.2;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-}
-.b-btn:active { background: #eee; transform: translateY(2px); }
-#build-msg { 
-    background: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 4px;
-    color: red; font-weight: bold; font-size: 12px; margin-top: 5px; display: inline-block;
-}
-
-/* --- アクションコントロール (右下) --- */
-#controls {
-    position: absolute; bottom: 10px; right: 10px; z-index: 400;
-    text-align: right;
-}
-#action-msg {
-    background: rgba(255,255,255,0.8); padding: 5px 10px; border-radius: 15px;
-    color: #d32f2f; font-weight: bold; font-size: 14px; margin-bottom: 5px; display: inline-block;
-}
-#main-controls {
-    background: rgba(255,255,255,0.95); padding: 10px; border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2); display: inline-block;
-}
-.action-row { margin-bottom: 8px; display: flex; justify-content: flex-end; gap: 10px; }
-.action-row button { padding: 10px 20px; font-size: 14px; }
-.trade-row { display: flex; align-items: center; gap: 3px; font-size: 12px; }
-.trade-row select { padding: 5px; width: 45px; }
-.trade-row button { padding: 5px 10px; font-size: 12px; }
-
-/* --- モーダル類 --- */
-#modal-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10000; }
+/* --- 共通: モーダル --- */
+#modal-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10000; pointer-events: none; }
 #modal-layer > * { pointer-events: auto; }
 #login-screen, .overlay-content {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    background: white; padding: 20px; border-radius: 15px; text-align: center;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 85%; max-width: 350px;
+    background: white; padding: 30px; border-radius: 15px; text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 90%; max-width: 400px; border: 2px solid #ddd;
 }
-.pulse-button { font-size: 20px; padding: 12px 30px; margin-top: 10px; }
-#dice-anim-overlay {
+#start-overlay, #dice-anim-overlay, #winner-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center; pointer-events: none;
+    background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; pointer-events: auto;
 }
+.pulse-button { font-size: 24px; padding: 15px 40px; background: #FF5722; width: 100%; border-radius: 10px; margin-top: 15px; }
 .dice-box { display: flex; gap: 20px; }
-.die {
-    width: 60px; height: 60px; background: white; border-radius: 10px; border: 2px solid #333;
-    display: flex; justify-content: center; align-items: center; font-size: 30px; font-weight: bold;
-    box-shadow: 5px 5px 10px rgba(0,0,0,0.5); animation: shake 0.5s infinite;
-}
+.die { width: 70px; height: 70px; background: white; border-radius: 10px; border: 2px solid #333; display: flex; justify-content: center; align-items: center; font-size: 35px; animation: shake 0.5s infinite; }
 @keyframes shake { 0%{transform:rotate(0deg);} 25%{transform:rotate(10deg);} 50%{transform:rotate(-10deg);} 75%{transform:rotate(5deg);} 100%{transform:rotate(0deg);} }
-#winner-overlay {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(255, 215, 0, 0.9); display: flex; justify-content: center; align-items: center;
+#winner-overlay { background: rgba(255, 215, 0, 0.9); }
+#winner-name { font-size: 40px; color: #d32f2f; margin-bottom: 20px; text-shadow: 2px 2px 4px white; }
+
+/* --- PC用レイアウト (デフォルト) --- */
+#mobile-header, #side-menu, #mobile-mini-status, #mobile-build-icons { display: none; } /* スマホ要素を隠す */
+
+#pc-log-container { position: absolute; top: 20px; left: 20px; width: 300px; background: rgba(255,255,255,0.85); border-radius: 8px; padding: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+#pc-log-area { height: 150px; overflow-y: scroll; font-size: 14px; }
+
+#pc-cost-table { position: absolute; bottom: 120px; left: 20px; width: 240px; background: rgba(255,255,255,0.95); border-radius: 12px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+.cost-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: bold; font-size: 14px; }
+.build-btn { padding: 4px 8px; font-size: 12px; background: #008CBA; color: white; border-radius: 4px; }
+
+#pc-info-panel { position: absolute; top: 20px; right: 20px; width: 220px; display: flex; flex-direction: column; gap: 10px; max-height: 85vh; overflow-y: auto; }
+.panel-box { background: rgba(255,255,255,0.9); border-radius: 8px; padding: 10px; flex-shrink: 0; }
+.panel-box h3 { margin: 0 0 5px 0; font-size: 16px; border-bottom: 1px solid #ccc; }
+
+#pc-status-bar { position: absolute; top: 0; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 5px 30px; border-radius: 0 0 15px 15px; font-weight: bold; text-align: center; }
+
+#controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.98); padding: 20px; border-radius: 20px; min-width: 600px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); text-align: center; }
+.control-row { display: flex; justify-content: space-around; align-items: center; gap: 30px; }
+.group-title { margin-bottom: 8px; font-weight: bold; color: #555; }
+.dice-group button { padding: 12px 25px; font-size: 16px; margin: 0 5px; }
+.trade-ui { display: flex; align-items: center; gap: 5px; justify-content: center; }
+.trade-ui select, .trade-ui button { padding: 8px; font-size: 14px; }
+#action-msg { color: #d32f2f; font-weight: bold; font-size: 18px; margin-bottom: 10px; }
+
+/* --- スマホ用レイアウト (幅600px未満) --- */
+@media (max-width: 600px) {
+    /* PC要素を隠す */
+    #pc-log-container, #pc-cost-table, #pc-info-panel, #pc-status-bar { display: none; }
+    
+    /* スマホ要素を表示 */
+    #mobile-header {
+        display: flex; position: absolute; top: 0; left: 0; width: 100%; height: 45px;
+        background: rgba(255,255,255,0.95); justify-content: space-between; align-items: center;
+        padding: 0 15px; box-sizing: border-box; z-index: 500; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    #mobile-game-info { font-weight: bold; font-size: 14px; }
+    #menu-btn { padding: 5px 10px; font-size: 12px; background: #444; }
+
+    #side-menu {
+        display: block; position: absolute; top: 0; right: 0; width: 260px; height: 100%;
+        background: white; z-index: 2000; transform: translateX(100%); transition: transform 0.3s;
+        box-shadow: -2px 0 10px rgba(0,0,0,0.2); overflow-y: auto;
+    }
+    #side-menu:not(.hidden) { transform: translateX(0); }
+    .menu-content { padding: 60px 15px 20px 15px; }
+    .close-btn { position: absolute; top: 10px; right: 10px; background: transparent; color: black; font-size: 24px; padding: 0; width: 30px; }
+
+    #mobile-mini-status {
+        display: block; position: absolute; top: 55px; left: 10px; 
+        background: rgba(255,255,255,0.8); padding: 5px 10px; border-radius: 15px;
+        font-size: 11px; font-weight: bold; pointer-events: none;
+    }
+
+    #controls {
+        bottom: 10px; padding: 10px; width: 95%; min-width: auto; border-radius: 12px;
+    }
+    #mobile-build-icons {
+        display: flex; gap: 8px; justify-content: center; margin-bottom: 10px;
+    }
+    .m-b-btn {
+        background: white; color: #333; border: 1px solid #ccc; width: 55px; height: 55px;
+        font-size: 10px; border-radius: 8px; display: flex; flex-direction: column; 
+        align-items: center; justify-content: center; line-height: 1.2;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .m-b-btn:active { background: #eee; transform: translateY(2px); }
+
+    .control-row { flex-direction: column; gap: 10px; }
+    .group-title { display: none; } /* スペース節約 */
+    .dice-group button { padding: 10px 30px; font-size: 16px; width: 45%; }
+    .trade-ui { flex-wrap: wrap; gap: 5px; }
+    .trade-ui select { width: 60px; font-size: 12px; padding: 5px; }
+    .trade-ui button { font-size: 12px; padding: 5px 10px; }
+    
+    #action-msg { font-size: 14px; margin-bottom: 8px; }
 }
-#connection-status { color: #666; font-size: 11px; margin-bottom: 5px; }

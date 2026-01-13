@@ -1,11 +1,4 @@
-let socket;
-try {
-    socket = io();
-} catch (e) {
-    console.error(e);
-    const st = document.getElementById('connection-status');
-    if(st) { st.innerText = "接続エラー"; st.style.color="red"; }
-}
+let socket; try { socket = io(); } catch (e) { console.error(e); }
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -25,54 +18,60 @@ const RESOURCE_INFO = {
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    const isMobile = canvas.width < 600;
+    
     ORIGIN_X = canvas.width / 2;
-    ORIGIN_Y = canvas.height / 2; // 真ん中に戻す（UIが四隅に散らばったため）
+    // スマホなら少し上に、PCなら中央
+    ORIGIN_Y = isMobile ? canvas.height * 0.4 : canvas.height * 0.5;
+    
     const minDim = Math.min(canvas.width, canvas.height);
-    const scaleFactor = (gameState && gameState.maxPlayers > 4) ? 15 : 12; // 少し小さめにして全体が見えるように
-    HEX_SIZE = Math.max(28, minDim / scaleFactor);
+    const scaleFactor = (gameState && gameState.maxPlayers > 4) ? 16 : 13;
+    // スマホでも見やすいサイズに調整
+    HEX_SIZE = Math.max(isMobile ? 32 : 45, minDim / scaleFactor);
+    
     if (gameState) render();
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
+function syncVolume(val) {
+    const pc = document.getElementById('pc-volume');
+    const mob = document.getElementById('mobile-volume');
+    if(pc) pc.value = val;
+    if(mob) mob.value = val;
+}
+
 function playSystemSound(type) {
-    const vol = document.getElementById('volume-slider') ? document.getElementById('volume-slider').value : 0.3;
+    const vol = document.getElementById('pc-volume') ? document.getElementById('pc-volume').value : 0.3;
     if (vol <= 0) return;
     new Audio(`sounds/${type}.mp3`).play().catch(()=>{});
 }
 
-// メニュー開閉
 function toggleMenu() {
     const menu = document.getElementById('side-menu');
     menu.classList.toggle('hidden');
 }
 
 function resetGame() {
-    if(confirm("本当にゲームをリセットして最初から始めますか？")) {
-        socket.emit('resetGame');
-        toggleMenu();
-    }
+    if(confirm("リセットしますか？")) { socket.emit('resetGame'); toggleMenu(); }
 }
 
-// ... (createBoardDataは前回と同じ) ...
+// --- Data Creation (Same as before) ---
 function createBoardData(maxPlayers = 4) {
     const hexes=[],vertices=[],edges=[],ports=[]; let id=0;
     let mapDef;
-    if (maxPlayers > 4) {
-        mapDef=[{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}];
-    } else {
-        mapDef=[{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
-    }
+    if (maxPlayers > 4) mapDef=[{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}];
+    else mapDef=[{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
     mapDef.forEach(row=>{for(let i=0;i<row.count;i++){
         const q=row.qStart+i, r=row.r;
         const x=Math.sqrt(3)*(q+r/2.0), y=3/2*r;
         hexes.push({id:id++,q,r,x,y,resource:null,number:0});
     }});
     let resBase = ['forest','forest','forest','forest','hill','hill','hill','mountain','mountain','mountain','field','field','field','field','pasture','pasture','pasture','pasture','desert'];
-    if (maxPlayers > 4) { resBase = [...resBase, 'forest','forest','hill','hill','mountain','mountain','field','field','pasture','pasture','desert']; }
+    if (maxPlayers > 4) resBase = [...resBase, 'forest','forest','hill','hill','mountain','mountain','field','field','pasture','pasture','desert'];
     const res = resBase.sort(()=>Math.random()-0.5);
     let numsBase = [5,2,6,3,8,10,9,12,11,4,8,10,9,4,5,6,3,11];
-    if (maxPlayers > 4) { numsBase = [...numsBase, 2,3,4,5,6,8,9,10,11,12]; }
+    if (maxPlayers > 4) numsBase = [...numsBase, 2,3,4,5,6,8,9,10,11,12];
     const nums = numsBase;
     let ri=0,ni=0;
     hexes.forEach(h=>{ h.resource = res[ri++] || 'desert'; if(h.resource==='desert') h.number=0; else h.number=nums[ni++]||7; });
@@ -91,53 +90,26 @@ function createBoardData(maxPlayers = 4) {
 }
 
 // UI Actions
-function joinGame() {
-    const name = document.getElementById('username').value;
-    const maxP = document.getElementById('player-count').value;
-    if(!name) return alert('名前を入れてください');
-    if(!socket || !socket.connected) return alert('サーバー接続中...');
-    socket.emit('joinGame', {name, maxPlayers: maxP});
-    document.getElementById('login-screen').style.display='none';
-    document.getElementById('start-overlay').style.display='flex';
-}
-function startGame() { 
-    try { 
-        const maxP = gameState && gameState.maxPlayers ? gameState.maxPlayers : 4;
-        const data = createBoardData(maxP); 
-        if(socket && socket.connected) { 
-            socket.emit('startGame', data); 
-            document.getElementById('start-btn-big').innerText="開始中...";
-            document.getElementById('start-btn-big').disabled = true;
-        } else { alert('サーバー未接続'); }
-    } catch(e) { alert("Error: " + e); } 
-}
+function joinGame() { const name = document.getElementById('username').value; const maxP = document.getElementById('player-count').value; if(name && socket) { socket.emit('joinGame', {name, maxPlayers: maxP}); document.getElementById('login-screen').style.display='none'; document.getElementById('start-overlay').style.display='flex'; } }
+function startGame() { try { const maxP = gameState && gameState.maxPlayers ? gameState.maxPlayers : 4; const data = createBoardData(maxP); if(socket && socket.connected) { socket.emit('startGame', data); document.getElementById('start-btn-big').innerText="開始中..."; document.getElementById('start-btn-big').disabled=true; } else { alert('サーバー未接続'); } } catch(e) { alert("Error: "+e); } }
 function playDiceAnim() { const ov = document.getElementById('dice-anim-overlay'); ov.style.display='flex'; const d1=document.getElementById('die1'), d2=document.getElementById('die2'); let c=0; const t = setInterval(()=>{ d1.innerText=Math.floor(Math.random()*6)+1; d2.innerText=Math.floor(Math.random()*6)+1; c++; if(c>8){ clearInterval(t); ov.style.display='none'; socket.emit('rollDice'); } },100); }
 function endTurn() { buildMode=null; updateBuildMsg(); socket.emit('endTurn'); }
 function sendTrade() { const g=document.getElementById('trade-give').value, r=document.getElementById('trade-receive').value; if(g===r) return alert('同じ資源'); socket.emit('trade',{give:g,receive:r}); }
 function buyCard() { if(gameState.diceResult) if(confirm('カード購入(羊1,小1,鉄1)')) socket.emit('buyCard'); }
 function playCard(t) { if(confirm(getCardName(t)+'を使用しますか？')) socket.emit('playCard',t); }
 function setBuildMode(mode) { if (!gameState || gameState.phase !== 'MAIN' || !gameState.diceResult) { alert("行動フェーズのみ"); return; } buildMode = (buildMode === mode) ? null : mode; updateBuildMsg(); }
-function updateBuildMsg() { const div = document.getElementById('build-msg'); if (!buildMode) div.innerText = ""; else if (buildMode === 'road') div.innerText = "【建設】道"; else if (buildMode === 'settlement') div.innerText = "【建設】開拓地"; else if (buildMode === 'city') div.innerText = "【建設】都市化"; }
+function updateBuildMsg() { const msg = !buildMode ? "" : (buildMode==='road'?"【建設】道":buildMode==='settlement'?"【建設】開拓":buildMode==='city'?"【建設】都市":""); document.getElementById('pc-build-msg').innerText = msg; }
 function getCardName(t) { return {knight:'騎士',road:'街道建設',plenty:'発見',monopoly:'独占',victory:'ポイント'}[t]; }
 
-// Socket
 if(socket) {
-    socket.on('connect', () => {
-        myId = socket.id;
-        const st = document.getElementById('connection-status');
-        if(st) { st.innerText = "🟢 接続完了"; st.style.color="green"; document.getElementById('join-btn').disabled = false; }
-    });
-    socket.on('disconnect', () => {
-        const st = document.getElementById('connection-status');
-        if(st) { st.innerText = "🔴 切断中"; st.style.color="red"; document.getElementById('join-btn').disabled = true; }
-    });
+    socket.on('connect', () => { myId=socket.id; const st=document.getElementById('connection-status'); if(st){st.innerText="🟢 接続完了"; st.style.color="green"; document.getElementById('join-btn').disabled=false;} });
+    socket.on('disconnect', () => { const st=document.getElementById('connection-status'); if(st){st.innerText="🔴 切断中"; st.style.color="red"; document.getElementById('join-btn').disabled=true;} });
     socket.on('gameStarted', s => { gameState=s; document.getElementById('start-overlay').style.display='none'; document.getElementById('controls').style.display='block'; resizeCanvas(); render(); updateUI(); });
     socket.on('updateState', s => { gameState=s; if(s.phase==='GAME_OVER') { document.getElementById('winner-name').innerText = s.winner.name; document.getElementById('winner-overlay').style.display='flex'; } render(); updateUI(); });
     socket.on('playSound', t => playSystemSound(t));
     socket.on('message', m => alert(m));
 }
 
-// Render
 function render() {
     if(!gameState || !gameState.board.hexes) return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -189,40 +161,60 @@ function drawSettlement(x,y,c) { const w=HEX_SIZE*0.15; ctx.beginPath(); ctx.mov
 function drawCity(x,y,c) { const w=HEX_SIZE*0.2; ctx.beginPath(); ctx.moveTo(x-w,y+w); ctx.lineTo(x+w,y+w); ctx.lineTo(x+w,y-w); ctx.lineTo(x,y-w*2); ctx.lineTo(x-w,y-w); ctx.closePath(); ctx.fillStyle=c; ctx.fill(); ctx.strokeStyle='gold'; ctx.lineWidth=3; ctx.stroke(); }
 
 function updateUI() {
-    const logs=document.getElementById('log-area'); if(gameState.logs){ logs.innerHTML=gameState.logs.map(l=>`<div>${l}</div>`).join(''); logs.scrollTop=logs.scrollHeight; }
-    const bankDiv=document.getElementById('bank-resources'); if(gameState.bank) bankDiv.innerHTML=Object.keys(gameState.bank).map(k=>`<div>${RESOURCE_INFO[k].icon} ${gameState.bank[k]}</div>`).join('');
-    const myDiv=document.getElementById('my-resources'); const myPlayer=gameState.players.find(p=>p.id===myId);
+    const isMobile = window.innerWidth < 600;
+    const myPlayer = gameState.players.find(p=>p.id===myId);
+
+    // ログ
+    const logsHTML = gameState.logs ? gameState.logs.map(l=>`<div>${l}</div>`).join('') : "";
+    if(isMobile) document.getElementById('mobile-log-area').innerHTML = logsHTML;
+    else { const l=document.getElementById('pc-log-area'); l.innerHTML=logsHTML; l.scrollTop=l.scrollHeight; }
+
+    // 資源 & 銀行 & カード
+    const bankHTML = gameState.bank ? Object.keys(gameState.bank).map(k=>`<div>${RESOURCE_INFO[k].icon} ${gameState.bank[k]}</div>`).join('') : "";
+    const myResHTML = myPlayer ? Object.keys(myPlayer.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${myPlayer.resources[k]}</div>`).join('') : "";
+    const myCardsHTML = (myPlayer && myPlayer.cards.length>0) ? myPlayer.cards.map(c=>`<div style="margin-top:2px;">${getCardName(c.type)} ${c.canUse?`<button onclick="playCard('${c.type}')" style="font-size:10px;">使用</button>`:'(待)'}</div>`).join('') : "なし";
     
-    const prodList = document.getElementById('prod-list');
-    if (myPlayer && prodList && gameState.board.hexes) {
-        const production = {};
+    // 生産力
+    let prodHTML = "";
+    if (myPlayer && gameState.board.hexes) {
+        const prod = {};
         gameState.board.hexes.forEach(h => {
-            if (h.resource === 'desert' || h.id === gameState.robberHexId) return;
+            if (h.resource==='desert' || h.id===gameState.robberHexId) return;
             const isAdj = gameState.board.vertices.some(v => v.owner === myPlayer.color && Math.abs(Math.hypot(v.x - h.x, v.y - h.y) - 1.0) < 0.1);
-            if (isAdj) { if (!production[h.number]) production[h.number] = []; const icon = RESOURCE_INFO[h.resource].icon; if(production[h.number].filter(x => x === icon).length < 2) production[h.number].push(icon); }
+            if (isAdj) { if (!prod[h.number]) prod[h.number] = []; const icon = RESOURCE_INFO[h.resource].icon; if(prod[h.number].filter(x => x === icon).length < 2) prod[h.number].push(icon); }
         });
-        const nums = Object.keys(production).sort((a,b)=>a-b);
-        prodList.innerHTML = nums.map(n => `<div><strong>${n}:</strong> ${production[n].join('')}</div>`).join('');
+        const nums = Object.keys(prod).sort((a,b)=>a-b);
+        prodHTML = nums.map(n => `<div><strong>${n}:</strong> ${prod[n].join('')}</div>`).join('');
     }
 
-    if(myPlayer) {
-        myDiv.innerHTML=Object.keys(myPlayer.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${myPlayer.resources[k]}</div>`).join('');
-        // 簡易表示用
-        document.getElementById('my-simple-res').innerText = `🎒 木${myPlayer.resources.forest} 土${myPlayer.resources.hill} 鉄${myPlayer.resources.mountain} 麦${myPlayer.resources.field} 羊${myPlayer.resources.pasture}`;
-        document.getElementById('my-simple-score').innerText = `🏆 ${myPlayer.victoryPoints}点`;
+    // スコア
+    const scoreHTML = gameState.players.map(p => `<div style="margin-bottom:4px; color:${p.color}; font-weight:bold;">${p.name}: ${p.victoryPoints}点</div>`).join('');
 
-        const cDiv=document.getElementById('my-cards');
-        if(cDiv && myPlayer.cards.length===0) cDiv.innerHTML='なし';
-        else if(cDiv) cDiv.innerHTML=myPlayer.cards.map(c=>`<div style="margin-top:2px;">${getCardName(c.type)} ${c.canUse?`<button onclick="playCard('${c.type}')" style="font-size:10px;">使用</button>`:'(待)'}</div>`).join('');
+    // 反映 (PC/スマホ)
+    if(isMobile) {
+        document.getElementById('mobile-bank-res').innerHTML = bankHTML;
+        document.getElementById('mobile-my-res').innerHTML = myResHTML;
+        document.getElementById('mobile-my-cards').innerHTML = myCardsHTML;
+        document.getElementById('mobile-prod-list').innerHTML = prodHTML;
+        document.getElementById('mobile-score-board').innerHTML = scoreHTML;
+        document.getElementById('mini-res').innerHTML = myPlayer ? `🎒 木${myPlayer.resources.forest} 土${myPlayer.resources.hill} 鉄${myPlayer.resources.mountain} 麦${myPlayer.resources.field} 羊${myPlayer.resources.pasture}` : "";
+        document.getElementById('mini-score').innerHTML = myPlayer ? `🏆 ${myPlayer.victoryPoints}点` : "";
+        document.getElementById('mobile-game-info').innerHTML = `手番: <span style="color:${gameState.players[gameState.turnIndex].color}">${gameState.players[gameState.turnIndex].name}</span> (${gameState.phase})`;
+    } else {
+        document.getElementById('pc-bank-res').innerHTML = bankHTML;
+        document.getElementById('pc-my-res').innerHTML = myResHTML;
+        document.getElementById('pc-my-cards').innerHTML = myCardsHTML;
+        document.getElementById('pc-prod-list').innerHTML = prodHTML;
+        document.getElementById('pc-score-board').innerHTML = scoreHTML;
+        document.getElementById('pc-game-info').innerHTML = `手番: <span style="color:${gameState.players[gameState.turnIndex].color}">${gameState.players[gameState.turnIndex].name}</span> (${gameState.phase})`;
     }
-    
-    const sb = document.getElementById('score-board');
-    if(sb) sb.innerHTML = gameState.players.map(p => `<div style="margin-bottom:4px; color:${p.color}; font-weight:bold;">${p.name}: ${p.victoryPoints}点</div>`).join('');
 
-    const info=document.getElementById('game-info'); const msg=document.getElementById('action-msg'); const mainCtrl=document.getElementById('main-controls');
-    const cur=gameState.players[gameState.turnIndex]; if(!cur) return;
-    info.innerHTML=`手番: <span style="color:${cur.color}">${cur.name}</span> (${gameState.phase})`;
-    
+    // アクションパネル
+    const msg = document.getElementById('action-msg');
+    const mainCtrl = document.getElementById('main-controls');
+    const cur = gameState.players[gameState.turnIndex];
+    if(!cur) return;
+
     if(gameState.phase==='MAIN'&&cur.id===myId) {
         mainCtrl.style.display='block';
         document.getElementById('roll-btn').disabled=!!gameState.diceResult;
