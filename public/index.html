@@ -11,7 +11,8 @@
         <div id="login-screen">
             <h2>カタンへようこそ</h2>
             <div id="connection-status">サーバー接続中...</div>
-            <input type="text" id="username" placeholder="名前を入力">
+            <input type="text" id="username" placeholder="名前 (例: おに)">
+            <input type="text" id="roomname" placeholder="部屋名 (例: room1) ※空欄でランダム" style="margin-top:10px;">
             <div style="margin-top:10px;">
                 <label>プレイ人数: </label>
                 <select id="player-count">
@@ -22,7 +23,7 @@
                     <option value="6">6人 (拡張)</option>
                 </select>
             </div>
-            <button id="join-btn" onclick="joinGame()" disabled>参加する</button>
+            <button id="join-btn" onclick="joinGame()" style="margin-top:15px;" disabled>参加する</button>
         </div>
         <div id="start-overlay" style="display:none;">
             <div class="overlay-content">
@@ -47,7 +48,6 @@
             <div id="mobile-game-info">待機中...</div>
             <button id="menu-btn" onclick="toggleMenu()">☰ メニュー</button>
         </div>
-        
         <div id="side-menu" class="hidden">
             <div class="menu-content">
                 <button class="close-btn" onclick="toggleMenu()">×</button>
@@ -62,12 +62,7 @@
                 </div>
             </div>
         </div>
-
-        <div id="pc-log-container">
-            <h3>ゲームログ</h3>
-            <div id="pc-log-area"></div>
-        </div>
-
+        <div id="pc-log-container"><h3>ゲームログ</h3><div id="pc-log-area"></div></div>
         <div id="pc-cost-table">
             <h3>建設</h3>
             <div class="cost-item"><button class="build-btn" onclick="setBuildMode('road')">道</button><span class="cost-res">🌲🧱</span></div>
@@ -76,7 +71,6 @@
             <div class="cost-item"><button class="build-btn" onclick="buyCard()">カード</button><span class="cost-res">🌾🐑⛰️</span></div>
             <div id="pc-build-msg" style="color:red;font-size:12px;"></div>
         </div>
-
         <div id="pc-info-panel">
             <div class="panel-box"><h3>🏦 銀行</h3><div id="pc-bank-res"></div></div>
             <div class="panel-box"><h3>🎒 資源</h3><div id="pc-my-res"></div></div>
@@ -85,19 +79,15 @@
             <div class="panel-box"><h3>生産力</h3><div id="pc-prod-list"></div></div>
             <div class="panel-box" style="text-align:center;"><h3>🔊 音量</h3><input type="range" id="pc-volume" min="0" max="1" step="0.1" value="0.3" onchange="syncVolume(this.value)"></div>
         </div>
-
         <div id="pc-status-bar"><h2>Catan</h2><div id="pc-game-info">待機中...</div></div>
-
         <div id="controls" style="display:none;">
             <div id="action-msg"></div>
-            
             <div id="mobile-build-icons">
                 <button class="m-b-btn" onclick="setBuildMode('road')">🛣️<br>道</button>
                 <button class="m-b-btn" onclick="setBuildMode('settlement')">🏠<br>開拓</button>
                 <button class="m-b-btn" onclick="setBuildMode('city')">🏰<br>都市</button>
                 <button class="m-b-btn" onclick="buyCard()">🃏<br>カード</button>
             </div>
-
             <div id="main-controls" style="display:none;">
                 <div class="control-row">
                     <div class="control-group dice-group">
@@ -116,13 +106,8 @@
                 </div>
             </div>
         </div>
-        
-        <div id="mobile-mini-status">
-            <div id="mini-res"></div>
-            <div id="mini-score"></div>
-        </div>
+        <div id="mobile-mini-status"><div id="mini-res"></div><div id="mini-score"></div></div>
     </div>
-
     <canvas id="gameCanvas"></canvas>
     <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>

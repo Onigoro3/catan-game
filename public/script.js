@@ -1,22 +1,14 @@
-let socket;
-try {
-    socket = io();
-} catch (e) {
-    console.error(e);
-    const st = document.getElementById('connection-status');
-    if(st) { st.innerText = "接続エラー"; st.style.color="red"; }
-}
+let socket; try { socket = io(); } catch (e) { console.error(e); }
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- カメラ・視点管理 ---
+let HEX_SIZE = 60;
 let gameState = null;
 let myId = null;
+let ORIGIN_X = 0, ORIGIN_Y = 0;
 let buildMode = null; 
-
-// マップ表示設定
-let HEX_SIZE = 60; // 基準サイズ
+// カメラ機能（スマホ用）
 let camera = { x: 0, y: 0, zoom: 1.0 };
 let isDragging = false;
 let lastPointer = { x: 0, y: 0 };
@@ -28,187 +20,43 @@ const RESOURCE_INFO = {
     pasture:{color:'#90EE90',label:'羊',icon:'🐑'}, desert:{color:'#F4A460',label:'砂漠',icon:'🌵'}
 };
 
-// --- 初期化 & リサイズ ---
 function initCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    
-    // 初期位置: 画面中央
     camera.x = canvas.width / 2;
     camera.y = canvas.height / 2;
+    
+    const isMobile = canvas.width < 600;
+    if(isMobile) camera.y = canvas.height * 0.4;
 
     const minDim = Math.min(canvas.width, canvas.height);
-    const isMobile = canvas.width < 600;
-
-    // ★スマホなら最初から大きく表示
-    // (基準HEX_SIZEに対して、スマホなら1.5倍くらいのズーム率で開始)
-    const baseSize = isMobile ? 35 : 45;
-    HEX_SIZE = baseSize; 
-    camera.zoom = isMobile ? 1.2 : 1.0; 
-
-    // スマホの場合、UIが下にあるので中心を少し上にずらす
-    if (isMobile) camera.y = canvas.height * 0.4;
-
+    const scaleFactor = (gameState && gameState.maxPlayers > 4) ? 16 : 13;
+    const baseSize = Math.max(isMobile ? 32 : 45, minDim / scaleFactor);
+    HEX_SIZE = baseSize;
+    
     if (gameState) render();
 }
-window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    if (gameState) render();
-});
-// 初回実行
+window.addEventListener('resize', initCanvas);
 initCanvas();
 
-
-// --- 操作イベント (PC & スマホ) ---
-
-// マウス操作 (PC)
-canvas.addEventListener('mousedown', e => {
-    isDragging = true;
-    lastPointer = { x: e.clientX, y: e.clientY };
-});
-canvas.addEventListener('mousemove', e => {
-    if (isDragging) {
-        const dx = e.clientX - lastPointer.x;
-        const dy = e.clientY - lastPointer.y;
-        camera.x += dx;
-        camera.y += dy;
-        lastPointer = { x: e.clientX, y: e.clientY };
-        render();
-    }
-});
-canvas.addEventListener('mouseup', () => isDragging = false);
-canvas.addEventListener('mouseleave', () => isDragging = false);
-canvas.addEventListener('wheel', e => {
-    e.preventDefault();
-    const zoomSpeed = 0.001;
-    const newZoom = camera.zoom - e.deltaY * zoomSpeed;
-    camera.zoom = Math.min(Math.max(newZoom, 0.5), 3.0); // 0.5倍〜3.0倍
-    render();
-}, { passive: false });
-
-// タッチ操作 (スマホ)
-canvas.addEventListener('touchstart', e => {
-    if (e.touches.length === 1) {
-        isDragging = true;
-        lastPointer = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    } else if (e.touches.length === 2) {
-        isDragging = false;
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        lastPinchDist = Math.sqrt(dx*dx + dy*dy);
-    }
-}, { passive: false });
-
-canvas.addEventListener('touchmove', e => {
-    e.preventDefault(); // スクロール防止
-    if (e.touches.length === 1 && isDragging) {
-        const dx = e.touches[0].clientX - lastPointer.x;
-        const dy = e.touches[0].clientY - lastPointer.y;
-        camera.x += dx;
-        camera.y += dy;
-        lastPointer = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        render();
-    } else if (e.touches.length === 2) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        
-        const diff = dist - lastPinchDist;
-        const newZoom = camera.zoom + diff * 0.005;
-        camera.zoom = Math.min(Math.max(newZoom, 0.5), 3.0);
-        
-        lastPinchDist = dist;
-        render();
-    }
-}, { passive: false });
-
-canvas.addEventListener('touchend', () => isDragging = false);
-
-
-// --- クリック処理 (座標変換付き) ---
-canvas.addEventListener('click', e => {
-    if(!gameState || isDragging) return; // ドラッグ中はクリック判定しない
-    
-    // タッチ操作との競合を防ぐため、わずかな移動はクリックとみなすロジックが必要だが、
-    // 簡易的に mouseup/touchend 直後の click イベントを使用する。
-    // ただし、大きくドラッグした後に click が発火しないように注意。
-    
-    const cur = gameState.players[gameState.turnIndex];
-    if(cur.id !== myId) return;
-
-    // 画面上のクリック位置
-    const rect = canvas.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-
-    // ★重要: 画面座標からワールド座標（カメラ補正なしの座標）へ逆変換
-    // 描画式: screenX = worldX * zoom + cameraX
-    // よって: worldX = (screenX - cameraX) / zoom
-    const worldX = (screenX - camera.x) / camera.zoom;
-    const worldY = (screenY - camera.y) / camera.zoom;
-
-    if(gameState.phase === 'ROBBER') {
-        let tH=null, minD=HEX_SIZE; // 半径くらい
-        gameState.board.hexes.forEach(h=>{ 
-            // ヘックスのワールド座標
-            const hx = h.x * HEX_SIZE;
-            const hy = h.y * HEX_SIZE;
-            const d = Math.hypot(hx - worldX, hy - worldY);
-            if(d < minD){ minD=d; tH=h; }
-        });
-        if(tH) socket.emit('moveRobber', tH.id);
-        return;
-    }
-
-    if(gameState.phase==='SETUP' || (gameState.phase==='MAIN'&&gameState.diceResult)) {
-        if(gameState.phase==='MAIN' && !buildMode) return;
-
-        if(gameState.phase==='SETUP' || buildMode==='settlement' || buildMode==='city') {
-            let tV=null, minD=HEX_SIZE*0.3;
-            gameState.board.vertices.forEach(v=>{ 
-                const vx = v.x * HEX_SIZE;
-                const vy = v.y * HEX_SIZE;
-                const d = Math.hypot(vx - worldX, vy - worldY);
-                if(d < minD){ minD=d; tV=v; }
-            });
-            if(tV) { 
-                if(buildMode==='city') socket.emit('buildCity', tV.id); 
-                else socket.emit('buildSettlement', tV.id); 
-                if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); } 
-                return; 
-            }
-        }
-        if(gameState.phase==='SETUP' || buildMode==='road') {
-            let tE=null, minD=HEX_SIZE*0.3;
-            gameState.board.edges.forEach(e=>{
-                const v1=gameState.board.vertices.find(v=>v.id===e.v1);
-                const v2=gameState.board.vertices.find(v=>v.id===e.v2);
-                const mx=(v1.x*HEX_SIZE + v2.x*HEX_SIZE)/2;
-                const my=(v1.y*HEX_SIZE + v2.y*HEX_SIZE)/2;
-                const d=Math.hypot(mx - worldX, my - worldY);
-                if(d < minD){ minD=d; tE=e; }
-            });
-            if(tE) { 
-                socket.emit('buildRoad', tE.id); 
-                if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); } 
-            }
-        }
-    }
-});
-
-
-// --- 以下、ゲームロジック・通信 (前回と同じ) ---
+// 操作系
+canvas.addEventListener('mousedown', e => { isDragging=true; lastPointer={x:e.clientX, y:e.clientY}; });
+canvas.addEventListener('mousemove', e => { if(isDragging){ camera.x+=e.clientX-lastPointer.x; camera.y+=e.clientY-lastPointer.y; lastPointer={x:e.clientX, y:e.clientY}; render(); } });
+canvas.addEventListener('mouseup', ()=>isDragging=false);
+canvas.addEventListener('wheel', e => { e.preventDefault(); const nz=camera.zoom-e.deltaY*0.001; camera.zoom=Math.min(Math.max(nz,0.5),3.0); render(); }, {passive:false});
+canvas.addEventListener('touchstart', e => { if(e.touches.length===1){isDragging=true;lastPointer={x:e.touches[0].clientX,y:e.touches[0].clientY};} else if(e.touches.length===2){isDragging=false;const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; lastPinchDist=Math.sqrt(dx*dx+dy*dy);} }, {passive:false});
+canvas.addEventListener('touchmove', e => { e.preventDefault(); if(e.touches.length===1&&isDragging){ camera.x+=e.touches[0].clientX-lastPointer.x; camera.y+=e.touches[0].clientY-lastPointer.y; lastPointer={x:e.touches[0].clientX,y:e.touches[0].clientY}; render(); } else if(e.touches.length===2){ const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; const dist=Math.sqrt(dx*dx+dy*dy); camera.zoom=Math.min(Math.max(camera.zoom+(dist-lastPinchDist)*0.005,0.5),3.0); lastPinchDist=dist; render(); } }, {passive:false});
+canvas.addEventListener('touchend', ()=>isDragging=false);
 
 function playSystemSound(type) {
-    const vol = document.getElementById('volume-slider') ? document.getElementById('volume-slider').value : 0.3;
+    const vol = document.getElementById('pc-volume') ? document.getElementById('pc-volume').value : 0.3;
     if (vol <= 0) return;
     new Audio(`sounds/${type}.mp3`).play().catch(()=>{});
 }
 
-function resetGame() {
-    if(confirm("リセットしますか？")) { socket.emit('resetGame'); toggleMenu(); }
-}
+function toggleMenu() { document.getElementById('side-menu').classList.toggle('hidden'); }
+function syncVolume(val) { const pc=document.getElementById('pc-volume'), mob=document.getElementById('mobile-volume'); if(pc)pc.value=val; if(mob)mob.value=val; }
+function resetGame() { if(confirm("リセットしますか？")) { socket.emit('resetGame'); toggleMenu(); } }
 
 function createBoardData(maxPlayers = 4) {
     const hexes=[],vertices=[],edges=[],ports=[]; let id=0;
@@ -242,94 +90,65 @@ function createBoardData(maxPlayers = 4) {
     return {hexes,vertices,edges,ports};
 }
 
+// ★修正: 部屋名も送信
 function joinGame() {
     const name = document.getElementById('username').value;
+    const room = document.getElementById('roomname').value;
     const maxP = document.getElementById('player-count').value;
     if(!name) return alert('名前を入れてください');
-    if(!socket || !socket.connected) return alert('サーバー接続中...');
-    socket.emit('joinGame', {name, maxPlayers: maxP});
+    if(!socket || !socket.connected) return alert('接続中...');
+    socket.emit('joinGame', {name, maxPlayers: maxP, roomName: room});
     document.getElementById('login-screen').style.display='none';
     document.getElementById('start-overlay').style.display='flex';
 }
-function startGame() { 
-    try { 
-        const maxP = gameState && gameState.maxPlayers ? gameState.maxPlayers : 4;
-        const data = createBoardData(maxP); 
-        if(socket && socket.connected) { 
-            socket.emit('startGame', data); 
-            document.getElementById('start-btn-big').innerText="開始中...";
-            document.getElementById('start-btn-big').disabled = true;
-        } else { alert('サーバー未接続'); }
-    } catch(e) { alert("Error: " + e); } 
-}
+function startGame() { try { const maxP = gameState && gameState.maxPlayers ? gameState.maxPlayers : 4; const data = createBoardData(maxP); if(socket) { socket.emit('startGame', data); document.getElementById('start-btn-big').innerText="開始中..."; document.getElementById('start-btn-big').disabled=true; } } catch(e){ alert(e); } }
 function playDiceAnim() { const ov = document.getElementById('dice-anim-overlay'); ov.style.display='flex'; const d1=document.getElementById('die1'), d2=document.getElementById('die2'); let c=0; const t = setInterval(()=>{ d1.innerText=Math.floor(Math.random()*6)+1; d2.innerText=Math.floor(Math.random()*6)+1; c++; if(c>8){ clearInterval(t); ov.style.display='none'; socket.emit('rollDice'); } },100); }
 function endTurn() { buildMode=null; updateBuildMsg(); socket.emit('endTurn'); }
 function sendTrade() { const g=document.getElementById('trade-give').value, r=document.getElementById('trade-receive').value; if(g===r) return alert('同じ資源'); socket.emit('trade',{give:g,receive:r}); }
 function buyCard() { if(gameState.diceResult) if(confirm('カード購入(羊1,小1,鉄1)')) socket.emit('buyCard'); }
 function playCard(t) { if(confirm(getCardName(t)+'を使用しますか？')) socket.emit('playCard',t); }
 function setBuildMode(mode) { if (!gameState || gameState.phase !== 'MAIN' || !gameState.diceResult) { alert("行動フェーズのみ"); return; } buildMode = (buildMode === mode) ? null : mode; updateBuildMsg(); }
-function updateBuildMsg() { const div = document.getElementById('build-msg'); if (!buildMode) div.innerText = ""; else if (buildMode === 'road') div.innerText = "【建設】道"; else if (buildMode === 'settlement') div.innerText = "【建設】開拓地"; else if (buildMode === 'city') div.innerText = "【建設】都市化"; }
+function updateBuildMsg() { const msg = !buildMode?"":(buildMode==='road'?"【建設】道":buildMode==='settlement'?"【建設】開拓":buildMode==='city'?"【建設】都市":""); document.getElementById('pc-build-msg').innerText=msg; if(document.getElementById('build-msg'))document.getElementById('build-msg').innerText=msg; }
 function getCardName(t) { return {knight:'騎士',road:'街道建設',plenty:'発見',monopoly:'独占',victory:'ポイント'}[t]; }
-function toggleMenu() { document.getElementById('side-menu').classList.toggle('hidden'); }
-function syncVolume(val) { const pc=document.getElementById('pc-volume'), mob=document.getElementById('mobile-volume'); if(pc)pc.value=val; if(mob)mob.value=val; }
 
 if(socket) {
-    socket.on('connect', () => { myId = socket.id; const st = document.getElementById('connection-status'); if(st) { st.innerText = "🟢 接続完了"; st.style.color="green"; document.getElementById('join-btn').disabled = false; } });
-    socket.on('disconnect', () => { const st = document.getElementById('connection-status'); if(st) { st.innerText = "🔴 切断中"; st.style.color="red"; document.getElementById('join-btn').disabled = true; } });
-    socket.on('gameStarted', s => { gameState=s; document.getElementById('start-overlay').style.display='none'; document.getElementById('controls').style.display='block'; render(); updateUI(); });
+    socket.on('connect', () => { myId = socket.id; const st=document.getElementById('connection-status'); if(st){st.innerText="🟢 接続完了"; st.style.color="green"; document.getElementById('join-btn').disabled=false;} });
+    socket.on('disconnect', () => { const st=document.getElementById('connection-status'); if(st){st.innerText="🔴 切断中"; st.style.color="red"; document.getElementById('join-btn').disabled=true;} });
+    socket.on('gameStarted', s => { gameState=s; document.getElementById('start-overlay').style.display='none'; document.getElementById('controls').style.display='block'; initCanvas(); render(); updateUI(); });
     socket.on('updateState', s => { gameState=s; if(s.phase==='GAME_OVER') { document.getElementById('winner-name').innerText = s.winner.name; document.getElementById('winner-overlay').style.display='flex'; } render(); updateUI(); });
     socket.on('playSound', t => playSystemSound(t));
     socket.on('message', m => alert(m));
-    socket.on('error', m => { alert(m); document.getElementById('start-btn-big').disabled = false; document.getElementById('start-btn-big').innerText = "ゲーム開始"; });
 }
 
-// --- 描画関数 (カメラ対応) ---
+// 描画 (カメラ適用)
 function render() {
     if(!gameState || !gameState.board.hexes) return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.fillStyle='#87CEEB'; ctx.fillRect(0,0,canvas.width,canvas.height);
     const {hexes,edges,vertices,ports} = gameState.board;
-
-    // ★カメラ適用: 座標 = world * HEX_SIZE * zoom + camera
-    const transform = (wx, wy) => ({
-        x: wx * HEX_SIZE * camera.zoom + camera.x,
-        y: wy * HEX_SIZE * camera.zoom + camera.y
-    });
-    // サイズもズーム
+    const transform = (wx, wy) => ({ x: wx * HEX_SIZE * camera.zoom + camera.x, y: wy * HEX_SIZE * camera.zoom + camera.y });
     const currentHexSize = HEX_SIZE * camera.zoom;
 
     hexes.forEach(h => {
         const p = transform(h.x, h.y);
         drawHexBase(p.x, p.y, currentHexSize, RESOURCE_INFO[h.resource].color);
-        
-        // ズームしすぎたら文字を消すなどの調整も可能だが、今回はそのまま
         if (currentHexSize > 15) {
             ctx.fillStyle='white'; ctx.textAlign='center'; ctx.textBaseline='middle';
             ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=4;
             ctx.font=`${currentHexSize*0.5}px Arial`; ctx.fillText(RESOURCE_INFO[h.resource].icon, p.x, p.y-currentHexSize*0.3);
             ctx.font=`bold ${currentHexSize*0.25}px Arial`; ctx.fillText(RESOURCE_INFO[h.resource].label, p.x, p.y+currentHexSize*0.3);
             ctx.shadowBlur=0;
-            if(h.number!==null) drawNumberToken(p.x, p.y, h.number, currentHexSize); 
-            else drawNumberToken(p.x, p.y, null, currentHexSize);
+            if(h.number!==null) drawNumberToken(p.x, p.y, h.number, currentHexSize); else drawNumberToken(p.x, p.y, null, currentHexSize);
         }
-        
         if(gameState.robberHexId===h.id) drawRobber(p.x, p.y, currentHexSize);
-        
-        if(gameState.phase==='ROBBER'&&gameState.players[gameState.turnIndex].id===myId) { 
-            ctx.strokeStyle='red'; ctx.lineWidth=3; ctx.stroke(); 
-        }
+        if(gameState.phase==='ROBBER'&&gameState.players[gameState.turnIndex].id===myId) { ctx.strokeStyle='red'; ctx.lineWidth=3; ctx.stroke(); }
     });
-
     if(ports) ports.forEach(p=>{
         const v1=vertices.find(v=>v.id===p.v1), v2=vertices.find(v=>v.id===p.v2);
         if(v1&&v2){
-            const pp = transform(p.x, p.y);
-            const p1 = transform(v1.x, v1.y);
-            const p2 = transform(v2.x, v2.y);
-            
+            const pp = transform(p.x, p.y), p1 = transform(v1.x, v1.y), p2 = transform(v2.x, v2.y);
             ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(pp.x, pp.y); ctx.lineTo(p2.x, p2.y);
             ctx.strokeStyle='#8B4513'; ctx.lineWidth=currentHexSize*0.08; ctx.stroke();
-            
             if (currentHexSize > 10) {
                 ctx.fillStyle='white'; ctx.beginPath(); ctx.arc(pp.x, pp.y, currentHexSize*0.25, 0, Math.PI*2); ctx.fill(); ctx.stroke();
                 ctx.fillStyle='black'; ctx.font=`${currentHexSize*0.15}px Arial`; 
@@ -337,17 +156,14 @@ function render() {
             }
         }
     });
-
     edges.forEach(e => {
         const v1=vertices.find(v=>v.id===e.v1), v2=vertices.find(v=>v.id===e.v2);
         if(v1&&v2) {
-            const p1 = transform(v1.x, v1.y);
-            const p2 = transform(v2.x, v2.y);
+            const p1 = transform(v1.x, v1.y), p2 = transform(v2.x, v2.y);
             if(e.owner) drawRoad(p1.x, p1.y, p2.x, p2.y, e.owner, currentHexSize);
             else { ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=currentHexSize*0.08; ctx.stroke(); }
         }
     });
-
     vertices.forEach(v => {
         const p = transform(v.x, v.y);
         if(v.owner) { if(v.type==='city') drawCity(p.x, p.y, v.owner, currentHexSize); else drawSettlement(p.x, p.y, v.owner, currentHexSize); }
@@ -365,7 +181,8 @@ function drawCity(x,y,c,s) { const w=s*0.2; ctx.beginPath(); ctx.moveTo(x-w,y+w)
 function updateUI() {
     const isMobile = window.innerWidth < 600;
     const myPlayer = gameState.players.find(p=>p.id===myId);
-
+    
+    // データ準備
     const logsHTML = gameState.logs ? gameState.logs.map(l=>`<div>${l}</div>`).join('') : "";
     const bankHTML = gameState.bank ? Object.keys(gameState.bank).map(k=>`<div>${RESOURCE_INFO[k].icon} ${gameState.bank[k]}</div>`).join('') : "";
     const myResHTML = myPlayer ? Object.keys(myPlayer.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${myPlayer.resources[k]}</div>`).join('') : "";
@@ -382,9 +199,9 @@ function updateUI() {
         const nums = Object.keys(prod).sort((a,b)=>a-b);
         prodHTML = nums.map(n => `<div><strong>${n}:</strong> ${prod[n].join('')}</div>`).join('');
     }
-
     const scoreHTML = gameState.players.map(p => `<div style="margin-bottom:4px; color:${p.color}; font-weight:bold;">${p.name}: ${p.victoryPoints}点</div>`).join('');
 
+    // 表示切り替え
     if(isMobile) {
         document.getElementById('mobile-log-area').innerHTML = logsHTML;
         document.getElementById('mobile-bank-res').innerHTML = bankHTML;
@@ -423,3 +240,48 @@ function updateUI() {
         mainCtrl.style.display='none'; msg.innerText="待機中...";
     }
 }
+
+// クリック判定 (カメラ対応)
+canvas.addEventListener('click', e => {
+    if(!gameState || isDragging) return;
+    const cur = gameState.players[gameState.turnIndex];
+    if(cur.id !== myId) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    
+    // 逆変換
+    const worldX = (screenX - camera.x) / (HEX_SIZE * camera.zoom);
+    const worldY = (screenY - camera.y) / (HEX_SIZE * camera.zoom);
+
+    if(gameState.phase === 'ROBBER') {
+        let tH=null, minD=1.0;
+        gameState.board.hexes.forEach(h=>{ 
+            const d=Math.hypot(h.x - worldX, h.y - worldY); 
+            if(d<minD){ minD=d; tH=h; }
+        });
+        if(tH) socket.emit('moveRobber', tH.id);
+        return;
+    }
+
+    if(gameState.phase==='SETUP' || (gameState.phase==='MAIN'&&gameState.diceResult)) {
+        if(gameState.phase==='MAIN' && !buildMode) return;
+
+        if(gameState.phase==='SETUP' || buildMode==='settlement' || buildMode==='city') {
+            let tV=null, minD=0.3;
+            gameState.board.vertices.forEach(v=>{ const d=Math.hypot(v.x - worldX, v.y - worldY); if(d<minD){ minD=d; tV=v; }});
+            if(tV) { if(buildMode==='city') socket.emit('buildCity', tV.id); else socket.emit('buildSettlement', tV.id); if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); } return; }
+        }
+        if(gameState.phase==='SETUP' || buildMode==='road') {
+            let tE=null, minD=0.3;
+            gameState.board.edges.forEach(e=>{
+                const v1=gameState.board.vertices.find(v=>v.id===e.v1), v2=gameState.board.vertices.find(v=>v.id===e.v2);
+                const mx=(v1.x+v2.x)/2, my=(v1.y+v2.y)/2;
+                const d=Math.hypot(mx - worldX, my - worldY);
+                if(d<minD){ minD=d; tE=e; }
+            });
+            if(tE) { socket.emit('buildRoad', tE.id); if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); } }
+        }
+    }
+});
