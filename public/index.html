@@ -11,8 +11,8 @@
         <div id="login-screen">
             <h2>カタンへようこそ</h2>
             <div id="connection-status">サーバー接続中...</div>
-            <input type="text" id="username" placeholder="名前 (例: おに)">
-            <input type="text" id="roomname" placeholder="部屋名 (例: room1) ※空欄でランダム" style="margin-top:10px;">
+            <input type="text" id="username" placeholder="名前">
+            <input type="text" id="roomname" placeholder="部屋名 (空欄でdefault)" style="margin-top:10px;">
             <div style="margin-top:10px;">
                 <label>プレイ人数: </label>
                 <select id="player-count">
@@ -21,6 +21,13 @@
                     <option value="4" selected>4人</option>
                     <option value="5">5人 (拡張)</option>
                     <option value="6">6人 (拡張)</option>
+                </select>
+            </div>
+            <div style="margin-top:10px;">
+                <label>マップタイプ: </label>
+                <select id="map-type">
+                    <option value="standard">定型 (3-4-5-4-3)</option>
+                    <option value="random">ランダム (不定形)</option>
                 </select>
             </div>
             <button id="join-btn" onclick="joinGame()" style="margin-top:15px;" disabled>参加する</button>
@@ -35,9 +42,10 @@
             <div class="dice-box"><div id="die1" class="die">?</div><div id="die2" class="die">?</div></div>
         </div>
         <div id="winner-overlay" style="display:none;">
-            <div class="overlay-content">
+            <div class="overlay-content" style="max-width:500px;">
                 <h1 id="winner-name"></h1>
                 <p>の勝利です！</p>
+                <div id="result-stats" style="text-align:left; margin:15px 0; max-height:200px; overflow-y:auto;"></div>
                 <button onclick="location.reload()" class="pulse-button">もう一度遊ぶ</button>
             </div>
         </div>
@@ -55,14 +63,21 @@
                 <div class="panel-box"><h3>🏦 銀行</h3><div id="mobile-bank-res"></div></div>
                 <div class="panel-box"><h3>生産力</h3><div id="mobile-prod-list"></div></div>
                 <div class="panel-box"><h3>スコア</h3><div id="mobile-score-board"></div></div>
-                <div class="panel-box"><h3>ログ</h3><div id="mobile-log-area"></div></div>
                 <div class="panel-box" style="text-align:center;">
                     <label>音量</label><input type="range" id="mobile-volume" min="0" max="1" step="0.1" value="0.3" onchange="syncVolume(this.value)">
                     <br><br><button onclick="resetGame()" style="background:#666;font-size:12px;">リセット</button>
                 </div>
             </div>
         </div>
-        <div id="pc-log-container"><h3>ゲームログ</h3><div id="pc-log-area"></div></div>
+
+        <div id="chat-container">
+            <div id="chat-messages"></div>
+            <div style="display:flex;">
+                <input type="text" id="chat-input" placeholder="チャット..." style="width:100px; flex-grow:1;">
+                <button onclick="sendChat()" style="padding:2px 8px;">送</button>
+            </div>
+        </div>
+
         <div id="pc-cost-table">
             <h3>建設</h3>
             <div class="cost-item"><button class="build-btn" onclick="setBuildMode('road')">道</button><span class="cost-res">🌲🧱</span></div>
@@ -80,6 +95,7 @@
             <div class="panel-box" style="text-align:center;"><h3>🔊 音量</h3><input type="range" id="pc-volume" min="0" max="1" step="0.1" value="0.3" onchange="syncVolume(this.value)"></div>
         </div>
         <div id="pc-status-bar"><h2>Catan</h2><div id="pc-game-info">待機中...</div></div>
+        
         <div id="controls" style="display:none;">
             <div id="action-msg"></div>
             <div id="mobile-build-icons">
@@ -98,10 +114,15 @@
                     <div class="control-group trade-group">
                         <div class="group-title">🏦 貿易</div>
                         <div class="trade-ui">
+                            <select id="trade-target">
+                                <option value="bank">銀行</option>
+                                <option value="bot">Bot</option>
+                            </select>
                             <select id="trade-give"><option value="forest">🌲</option><option value="hill">🧱</option><option value="mountain">⛰️</option><option value="field">🌾</option><option value="pasture">🐑</option></select>
                             ➡ <select id="trade-receive"><option value="forest">🌲</option><option value="hill">🧱</option><option value="mountain">⛰️</option><option value="field">🌾</option><option value="pasture">🐑</option></select>
                             <button id="trade-btn" onclick="sendTrade()" disabled>交換</button>
                         </div>
+                        <div id="trade-rate-msg" style="font-size:10px; color:#555;">レート: 4:1</div>
                     </div>
                 </div>
             </div>

@@ -98,4 +98,26 @@ select, input { border-radius: 4px; border: 1px solid #ccc; padding: 5px; }
     .trade-ui button { font-size: 12px; padding: 5px 10px; }
     
     #action-msg { font-size: 14px; margin-bottom: 8px; }
+    /* ... (前回までのスタイルに追記) ... */
+
+/* チャット (左上) */
+#chat-container {
+    position: absolute; top: 50px; left: 10px; width: 250px;
+    z-index: 300; background: rgba(255,255,255,0.7); border-radius: 8px; padding: 5px;
+    display: flex; flex-direction: column; gap: 5px;
+    max-height: 200px;
+}
+#chat-messages {
+    flex-grow: 1; overflow-y: auto; font-size: 12px; height: 100px;
+    text-shadow: 1px 1px 0 #fff;
+}
+@media (max-width: 600px) {
+    #chat-container { width: 180px; top: 50px; left: 5px; }
+    #chat-messages { height: 60px; font-size: 10px; }
+}
+
+/* 建設アイコン (スマホ用) 微調整 */
+.m-b-btn { font-size: 10px; width: 50px; height: 50px; }
+
+/* ... (他は前回のままでOK) ... */
 }

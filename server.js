@@ -13,13 +13,12 @@ const DEV_CARDS_TEMPLATE = [
     ...Array(2).fill('road'), ...Array(2).fill('plenty'), ...Array(2).fill('monopoly')
 ];
 
-// ★部屋ごとのゲーム状態を管理
 const rooms = {};
 
-// 部屋の初期化
 function initGame(roomId, maxP = 4) {
     rooms[roomId] = {
         players: [],
+        spectators: [], // 観戦者
         board: { hexes: [], vertices: [], edges: [], ports: [] },
         bank: { forest: 19, hill: 19, mountain: 19, field: 19, pasture: 19 },
         devCardDeck: [...DEV_CARDS_TEMPLATE].sort(() => Math.random() - 0.5),
@@ -32,56 +31,63 @@ function initGame(roomId, maxP = 4) {
         diceResult: null,
         robberHexId: null,
         logs: [],
+        chats: [], // チャット履歴
         hiddenNumbers: [],
         roadBuildingCount: 0,
         largestArmy: { playerId: null, size: 0 }, 
         longestRoad: { playerId: null, length: 0 }, 
         winner: null,
-        maxPlayers: maxP
+        maxPlayers: maxP,
+        stats: { // 統計情報
+            diceHistory: Array(13).fill(0), // 2~12
+            resourceCollected: {} // playerID: count
+        }
     };
     console.log(`Room [${roomId}] Created (Max: ${maxP})`);
 }
 
-// ヘルパー: ソケットがどの部屋にいるか探す
 function getRoomId(socket) {
     for (const [roomId, room] of Object.entries(rooms)) {
-        if (room.players.find(p => p.id === socket.id)) return roomId;
+        if (room.players.find(p => p.id === socket.id) || room.spectators.includes(socket.id)) return roomId;
     }
     return null;
 }
 
 io.on('connection', (socket) => {
     socket.on('joinGame', ({name, maxPlayers, roomName}) => {
-        // 部屋名がなければデフォルト
         const roomId = roomName || 'default';
-        
-        // 部屋がなければ作る
-        if (!rooms[roomId]) {
-            initGame(roomId, parseInt(maxPlayers) || 4);
-        }
-        
+        if (!rooms[roomId]) initGame(roomId, parseInt(maxPlayers) || 4);
         const game = rooms[roomId];
+        socket.join(roomId);
 
-        // 再接続チェック
+        // 既存プレイヤー再接続
         const existing = game.players.find(p => p.id === socket.id);
-        if (existing) return;
-
-        if (game.players.length >= game.maxPlayers) { 
-            socket.emit('error', 'この部屋は満員です'); return; 
+        if (existing) {
+            io.to(roomId).emit('updateState', game);
+            return;
         }
 
-        socket.join(roomId); // Socket.ioのルーム機能に参加
+        // 満員なら観戦者
+        if (game.players.length >= game.maxPlayers) {
+            game.spectators.push(socket.id);
+            socket.emit('message', '満員のため観戦モードで参加します');
+            socket.emit('updateState', game);
+            return;
+        }
 
         const colors = ['red', 'blue', 'orange', 'white', 'green', 'brown'];
         const usedColors = game.players.map(p => p.color);
         const color = colors.find(c => !usedColors.includes(c)) || 'black';
 
-        game.players.push({
+        const player = {
             id: socket.id, name: name, color: color, isBot: false,
             resources: { forest: 0, hill: 0, mountain: 0, field: 0, pasture: 0 },
             cards: [], victoryPoints: 0, roadLength: 0, armySize: 0
-        });
+        };
+        game.players.push(player);
+        game.stats.resourceCollected[player.id] = 0;
         
+        addLog(roomId, `${name} が参加しました`);
         io.to(roomId).emit('updateState', game);
     });
 
@@ -103,11 +109,13 @@ io.on('connection', (socket) => {
                 let idx = game.players.length;
                 const usedColors = game.players.map(p => p.color);
                 const botColor = colors.find(c => !usedColors.includes(c)) || 'gray';
+                const botId = `bot-${roomId}-${idx}`;
                 game.players.push({
-                    id: `bot-${roomId}-${idx}`, name: `Bot ${idx}`, color: botColor, isBot: true,
+                    id: botId, name: `Bot ${idx}`, color: botColor, isBot: true,
                     resources: { forest: 0, hill: 0, mountain: 0, field: 0, pasture: 0 },
                     cards: [], victoryPoints: 0, roadLength: 0, armySize: 0
                 });
+                game.stats.resourceCollected[botId] = 0;
             }
 
             let order = [];
@@ -127,18 +135,28 @@ io.on('connection', (socket) => {
         }
     });
 
-    // リセット（部屋単位）
-    socket.on('resetGame', () => {
+    // チャット
+    socket.on('chatMessage', (msg) => {
         const roomId = getRoomId(socket);
-        if(roomId && rooms[roomId]) {
-            const maxP = rooms[roomId].maxPlayers;
-            initGame(roomId, maxP);
-            addLog(roomId, "ゲームがリセットされました");
-            io.to(roomId).emit('gameStarted', rooms[roomId]); // 強制リロード的な挙動
+        if (roomId && rooms[roomId]) {
+            const player = rooms[roomId].players.find(p => p.id === socket.id);
+            const name = player ? player.name : "観戦者";
+            const chatObj = { name, msg, color: player ? player.color : '#666' };
+            rooms[roomId].chats.push(chatObj);
+            if(rooms[roomId].chats.length > 50) rooms[roomId].chats.shift();
+            io.to(roomId).emit('chatUpdate', chatObj);
         }
     });
 
-    // アクション系
+    socket.on('resetGame', () => {
+        const roomId = getRoomId(socket);
+        if(roomId && rooms[roomId]) {
+            initGame(roomId, rooms[roomId].maxPlayers);
+            addLog(roomId, "ゲームがリセットされました");
+            io.to(roomId).emit('gameStarted', rooms[roomId]);
+        }
+    });
+
     const wrapAction = (handler) => (data) => {
         const roomId = getRoomId(socket);
         if (roomId && rooms[roomId]) handler(roomId, socket.id, data);
@@ -158,18 +176,15 @@ io.on('connection', (socket) => {
         const roomId = getRoomId(socket);
         if (roomId && rooms[roomId]) {
             rooms[roomId].players = rooms[roomId].players.filter(p => p.id !== socket.id);
-            // 人間がいなくなったら部屋削除（メモリ節約）
-            if(rooms[roomId].players.filter(p => !p.isBot).length === 0) {
+            rooms[roomId].spectators = rooms[roomId].spectators.filter(id => id !== socket.id);
+            if(rooms[roomId].players.filter(p => !p.isBot).length === 0 && rooms[roomId].spectators.length === 0) {
                 delete rooms[roomId];
-                console.log(`Room [${roomId}] Deleted`);
             } else {
                 io.to(roomId).emit('updateState', rooms[roomId]);
             }
         }
     });
 });
-
-// --- ロジック関数 (roomIdを受け取るように変更) ---
 
 function payCost(game, player, cost) {
     for (let r in cost) { if (player.resources[r] < cost[r]) return false; }
@@ -187,6 +202,8 @@ function handleBuildSettlement(rid, pid, vId) {
     const neighbors = game.board.edges.filter(e => e.v1 === vId || e.v2 === vId).map(e => (e.v1 === vId ? e.v2 : e.v1));
     if (neighbors.some(nId => game.board.vertices.find(v => v.id === nId).owner)) return;
     if (game.phase === 'MAIN') {
+        const connected = game.board.edges.some(e => e.owner === player.color && (e.v1===vId || e.v2===vId));
+        if(!connected) return;
         if (!payCost(game, player, { forest: 1, hill: 1, field: 1, pasture: 1 })) return;
     }
     vertex.owner = player.color;
@@ -196,9 +213,9 @@ function handleBuildSettlement(rid, pid, vId) {
     io.to(rid).emit('playSound', 'build');
     if (game.phase === 'SETUP' && game.setupStep >= game.players.length) {
         game.board.hexes.forEach(h => {
-            const dist = Math.hypot(h.x - vertex.x, h.y - vertex.y);
-            if (Math.abs(dist - 1.0) < 0.1 && h.resource !== 'desert' && game.bank[h.resource] > 0) {
+            if (Math.abs(Math.hypot(h.x - vertex.x, h.y - vertex.y) - 1.0) < 0.1 && h.resource !== 'desert' && game.bank[h.resource] > 0) {
                 player.resources[h.resource]++; game.bank[h.resource]--;
+                game.stats.resourceCollected[player.id]++;
             }
         });
     }
@@ -229,6 +246,8 @@ function handleBuildRoad(rid, pid, eId) {
     if (game.phase === 'SETUP') {
         if (edge.v1 !== game.lastSettlementId && edge.v2 !== game.lastSettlementId) return;
     } else {
+        const connected = game.board.edges.some(e => e.owner === player.color && (e.v1===edge.v1 || e.v1===edge.v2 || e.v2===edge.v1 || e.v2===edge.v2)) || game.board.vertices.some(v => v.owner === player.color && (v.id===edge.v1 || v.id===edge.v2));
+        if(!connected) return;
         if (game.roadBuildingCount > 0) { game.roadBuildingCount--; addLog(rid, `${player.name} が街道建設カード使用`); }
         else { if (!payCost(game, player, { forest: 1, hill: 1 })) return; }
     }
@@ -273,8 +292,8 @@ function handlePlayCard(rid, pid, type) {
     addLog(rid, `${player.name} が ${getCardName(type)} を使用！`);
     if (type === 'knight') { player.armySize++; checkLargestArmy(rid, player); game.phase = 'ROBBER'; addLog(rid, "盗賊を移動させてください"); }
     else if (type === 'road') { game.roadBuildingCount = 2; }
-    else if (type === 'plenty') { game.bank.forest--; player.resources.forest++; game.bank.mountain--; player.resources.mountain++; }
-    else if (type === 'monopoly') { let stolen = 0; game.players.forEach(p => { if(p.id!==pid){ stolen+=p.resources.mountain; p.resources.mountain=0; } }); player.resources.mountain += stolen; addLog(rid, `鉄を独占 (${stolen}枚)`); }
+    else if (type === 'plenty') { game.bank.forest--; player.resources.forest++; game.bank.mountain--; player.resources.mountain++; game.stats.resourceCollected[player.id]+=2; }
+    else if (type === 'monopoly') { let stolen = 0; game.players.forEach(p => { if(p.id!==pid){ stolen+=p.resources.mountain; p.resources.mountain=0; } }); player.resources.mountain += stolen; game.stats.resourceCollected[player.id]+=stolen; addLog(rid, `鉄を独占 (${stolen}枚)`); }
     else if (type === 'victory') { player.victoryPoints++; }
     updateVictoryPoints(rid);
     io.to(rid).emit('updateState', game);
@@ -305,6 +324,7 @@ function handleMoveRobber(rid, pid, hexId) {
             if (keys.length) {
                 const res = keys[Math.floor(Math.random() * keys.length)];
                 vic.resources[res]--; player.resources[res]++;
+                game.stats.resourceCollected[player.id]++;
                 addLog(rid, `${player.name} が ${vic.name} から資源を奪いました`);
             }
         }
@@ -320,6 +340,7 @@ function handleRollDice(rid, pid) {
     const d1 = Math.floor(Math.random() * 6) + 1;
     const d2 = Math.floor(Math.random() * 6) + 1;
     game.diceResult = d1 + d2;
+    game.stats.diceHistory[game.diceResult]++; // 統計
     addLog(rid, `${game.players[game.turnIndex].name} のサイコロ: ${game.diceResult}`);
     if (game.diceResult === 7) { io.to(rid).emit('playSound', 'robber'); game.phase = 'ROBBER'; }
     else {
@@ -331,7 +352,10 @@ function handleRollDice(rid, pid) {
                     const p = game.players.find(pl => pl.color === v.owner);
                     if (p && game.bank[hex.resource] > 0) {
                         const amount = v.type === 'city' ? 2 : 1;
-                        if(game.bank[hex.resource] >= amount) { game.bank[hex.resource] -= amount; p.resources[hex.resource] += amount; }
+                        if(game.bank[hex.resource] >= amount) { 
+                            game.bank[hex.resource] -= amount; p.resources[hex.resource] += amount; 
+                            game.stats.resourceCollected[p.id] += amount;
+                        }
                     }
                 }
             });
@@ -355,11 +379,31 @@ function handleEndTurn(rid, pid) {
     checkBotTurn(rid);
 }
 
-function handleTrade(rid, pid, { give, receive }) {
+function handleTrade(rid, pid, { target, give, receive }) {
     const game = rooms[rid];
     const p = game.players.find(pl => pl.id === pid);
     if (!p || game.players[game.turnIndex].id !== pid) return;
-    if (p.resources[give] < 1 || game.bank[receive] < 1) return;
+    if (p.resources[give] < 1) return;
+
+    // Botとの交換 (1:1)
+    if (target === 'bot') {
+        // 全てのBotの中から、receiveを持っていて、giveが0のBotを探す（簡易的）
+        const bot = game.players.find(b => b.isBot && b.resources[receive] > 0);
+        if (bot) {
+            p.resources[give]--; bot.resources[give]++;
+            p.resources[receive]++; bot.resources[receive]--;
+            addLog(rid, `${p.name} が ${bot.name} と交換 (${give}⇔${receive})`);
+            io.to(rid).emit('playSound', 'build');
+            io.to(rid).emit('updateState', game);
+            return;
+        } else {
+            io.to(pid).emit('message', '交換に応じるBotがいません');
+            return;
+        }
+    }
+
+    // 銀行との交換 (ポート判定)
+    if (game.bank[receive] < 1) return;
     let cost = 4;
     const myVs = game.board.vertices.filter(v => v.owner === p.color).map(v => v.id);
     game.board.ports.forEach(port => {
@@ -368,8 +412,9 @@ function handleTrade(rid, pid, { give, receive }) {
         }
     });
     if (p.resources[give] < cost) return;
-    p.resources[give] -= cost; game.bank[give] += cost; p.resources[receive]++; game.bank[receive]--;
-    addLog(rid, `${p.name} が交換 (${give}→${receive})`);
+    p.resources[give] -= cost; game.bank[give] += cost;
+    p.resources[receive]++; game.bank[receive]--;
+    addLog(rid, `${p.name} が交換 (${give}x${cost} → ${receive}x1)`);
     io.to(rid).emit('updateState', game);
 }
 
@@ -401,11 +446,8 @@ function checkLongestRoad(rid, player) {
 }
 function addLog(rid, msg) { if(rooms[rid]){ rooms[rid].logs.push(msg); if(rooms[rid].logs.length>15) rooms[rid].logs.shift(); } }
 function checkBotTurn(rid) { const game = rooms[rid]; const cur = game.players[game.turnIndex]; if(cur && cur.isBot) setTimeout(() => botAction(rid, cur), 1500); }
-
 function botAction(rid, p) {
-    const game = rooms[rid];
-    if(!game) return;
-    // (Botロジックは gameState を game に置き換える以外は同じ)
+    const game = rooms[rid]; if(!game) return;
     if (game.phase === 'SETUP') {
         if (game.subPhase === 'SETTLEMENT') {
             const valids = game.board.vertices.filter(v => !v.owner && !game.board.edges.filter(e=>e.v1===v.id||e.v2===v.id).some(e=>{ const n=e.v1===v.id?e.v2:e.v1; return game.board.vertices.find(vt=>vt.id===n).owner; }));
@@ -443,7 +485,6 @@ function botAction(rid, p) {
                 if (validEs.length > 0) { handleBuildRoad(rid, p.id, validEs[Math.floor(Math.random()*validEs.length)].id); acted = true; }
             }
             if (!acted && p.resources.field >= 1 && p.resources.pasture >= 1 && p.resources.mountain >= 1) { handleBuyCard(rid, p.id); acted = true; }
-            
             if (!acted) handleEndTurn(rid, p.id); else setTimeout(() => botAction(rid, p), 1000);
         }
     }
