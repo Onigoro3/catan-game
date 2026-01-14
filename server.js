@@ -19,6 +19,66 @@ const DEFAULT_SETTINGS = {
     mapType: 'standard', mapSize: 'normal', victoryPoints: 10, burstEnabled: true
 };
 
+// --- マップ生成ロジック (サーバー側で実行) ---
+function createBoardData(mapSize, mapType) {
+    const hexes=[],vertices=[],edges=[],ports=[]; let id=0;
+    
+    // 座標生成
+    if (mapType === 'random') {
+        const targetCount = mapSize === 'extended' ? 30 : 19;
+        const qrs = new Set(['0,0']); const dirs = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+        while(qrs.size < targetCount) {
+            const arr = Array.from(qrs); const base = arr[Math.floor(Math.random()*arr.length)].split(',').map(Number);
+            const d = dirs[Math.floor(Math.random()*6)]; qrs.add(`${base[0]+d[0]},${base[1]+d[1]}`);
+        }
+        qrs.forEach(str => { const [q,r]=str.split(',').map(Number); const x=Math.sqrt(3)*(q+r/2.0), y=3/2*r; hexes.push({id:id++,q,r,x,y,resource:null,number:0}); });
+    } else {
+        let mapDef;
+        if (mapSize === 'extended') mapDef=[{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}];
+        else mapDef=[{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
+        mapDef.forEach(row=>{for(let i=0;i<row.count;i++){ const q=row.qStart+i,r=row.r; const x=Math.sqrt(3)*(q+r/2.0),y=3/2*r; hexes.push({id:id++,q,r,x,y,resource:null,number:0}); }});
+    }
+
+    // 資源と数字
+    const count=hexes.length; const baseRes=['forest','hill','mountain','field','pasture']; const resList=['desert'];
+    if(mapSize==='extended') resList.push('desert');
+    for(let i=0;i<count-resList.length;i++)resList.push(baseRes[i%5]); const res=resList.sort(()=>Math.random()-0.5);
+    
+    let baseNums = [2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12];
+    if (mapSize === 'extended') baseNums = [...baseNums, 2,3,4,5,6,8,9,10,11,12];
+    const numList=[]; let ni=0; while(numList.length<count){ numList.push(baseNums[ni%baseNums.length]); ni++; }
+    const nums=numList.sort(()=>Math.random()-0.5);
+
+    let ri=0,n_idx=0;
+    hexes.forEach(h=>{
+        h.resource = res[ri++] || 'desert';
+        if(h.resource==='desert') h.number=0; else h.number=nums[n_idx++]||7;
+    });
+
+    // 頂点・辺・港
+    const rawV=[]; hexes.forEach(h=>{for(let i=0;i<6;i++){const r=Math.PI/180*(60*i-30); rawV.push({x:h.x+Math.cos(r), y:h.y+Math.sin(r)});}});
+    rawV.forEach(rv=>{if(!vertices.find(v=>Math.hypot(v.x-rv.x,v.y-rv.y)<0.1)) vertices.push({id:vertices.length,x:rv.x,y:rv.y,owner:null,type:'none'});});
+    for(let i=0;i<vertices.length;i++){for(let j=i+1;j<vertices.length;j++){if(Math.hypot(vertices[i].x-vertices[j].x,vertices[i].y-vertices[j].y)<1.1) edges.push({id:edges.length,v1:vertices[i].id,v2:vertices[j].id,owner:null});}}
+    
+    let cx=0,cy=0; vertices.forEach(v=>{cx+=v.x; cy+=v.y;}); cx/=vertices.length; cy/=vertices.length;
+    const th=(mapType==='random'?2.0:(mapSize==='extended'?3.2:2.4));
+    const outer=vertices.filter(v=>Math.hypot(v.x-cx,v.y-cy)>th).sort((a,b)=>Math.atan2(a.y-cy,a.x-cx)-Math.atan2(b.y-cy,b.x-cx));
+    const pts=['any','pasture','any','forest','any','hill','any','field','mountain','any','any'];
+    let pi=0; 
+    for(let i=0;i<outer.length&&pi<pts.length;i+=3){
+        if(i+1<outer.length){
+            const v1=outer[i], v2=outer[i+1];
+            // 辺でつながっているか確認
+            if(edges.some(e=>(e.v1===v1.id&&e.v2===v2.id)||(e.v1===v2.id&&e.v2===v1.id))){
+                const mx=(v1.x+v2.x)/2, my=(v1.y+v2.y)/2;
+                const ang=Math.atan2(my-cy,mx-cx);
+                ports.push({type:pts[pi++],v1:v1.id,v2:v2.id,x:mx+0.4*Math.cos(ang),y:my+0.4*Math.sin(ang)});
+            }
+        }
+    }
+    return {hexes,vertices,edges,ports};
+}
+
 function initGame(roomId, settings = {}) {
     const config = { ...DEFAULT_SETTINGS, ...settings };
     rooms[roomId] = {
@@ -66,12 +126,10 @@ function startTimer(rid) {
 }
 
 io.on('connection', (socket) => {
-    // 部屋作成
     socket.on('createRoom', ({ name, roomName, settings }) => {
         const roomId = roomName || 'default';
         if (rooms[roomId]) { socket.emit('error', 'その部屋名は既に使用されています'); return; }
         
-        // 数値変換
         settings.humanLimit = parseInt(settings.humanLimit);
         settings.botCount = parseInt(settings.botCount);
         
@@ -79,7 +137,6 @@ io.on('connection', (socket) => {
         joinRoomProcess(socket, roomId, name);
     });
 
-    // 参加
     socket.on('joinGame', ({ name, roomName }) => {
         const roomId = roomName || 'default';
         if (!rooms[roomId]) { socket.emit('error', '部屋が見つかりません'); return; }
@@ -90,15 +147,13 @@ io.on('connection', (socket) => {
         const game = rooms[roomId];
         socket.join(roomId);
 
-        // 再接続
         const existing = game.players.find(p => p.id === socket.id);
         if (existing) {
-            existing.name = playerName || existing.name; // 名前更新
+            existing.name = playerName || existing.name;
             io.to(roomId).emit('updateState', game);
             return;
         }
 
-        // 満員なら観戦
         const currentHumans = game.players.filter(p => !p.isBot).length;
         if (currentHumans >= game.settings.humanLimit) {
             game.spectators.push(socket.id);
@@ -125,29 +180,36 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('updateState', game);
     }
 
-    // ゲーム開始
-    socket.on('startGame', (boardData) => {
+    // ★ゲーム開始処理 (サーバー側でマップ生成)
+    socket.on('startGame', () => {
         const roomId = getRoomId(socket);
         if (!roomId || !rooms[roomId]) return;
         const game = rooms[roomId];
 
-        // 既に開始済みなら無視
         if (game.phase !== 'SETUP' && game.phase !== 'GAME_OVER') return;
 
         if (game.players.length > 0) {
-            game.board = boardData;
+            // ★マップ生成をサーバーで行う
+            game.board = createBoardData(game.settings.mapSize, game.settings.mapType);
+            
             const desert = game.board.hexes.find(h => h.resource === 'desert');
             if (desert) game.robberHexId = desert.id;
             game.hiddenNumbers = game.board.hexes.map(h => h.number);
             game.board.hexes.forEach(h => { if (h.resource !== 'desert') h.number = null; });
 
-            // Bot補充 (設定数 + 人数不足分)
-            const minPlayers = 2; // 最低人数
-            const botsNeeded = Math.max(0, minPlayers - game.players.length);
-            const totalBots = Math.max(game.settings.botCount, botsNeeded);
+            // Bot補充 (最低2人になるように調整)
+            const minPlayers = 2;
+            // 現在のBot数
+            const currentBots = game.players.filter(p=>p.isBot).length;
+            // 設定されたBot数 - 現在のBot数 (再スタート時など考慮)
+            let botsNeeded = game.settings.botCount - currentBots;
+            // 全体人数が2人未満なら追加
+            if (game.players.length + botsNeeded < minPlayers) {
+                botsNeeded += (minPlayers - (game.players.length + botsNeeded));
+            }
 
             const colors = ['red', 'blue', 'orange', 'white', 'green', 'brown'];
-            for(let i=0; i<totalBots; i++) {
+            for(let i=0; i<botsNeeded; i++) {
                 const botColor = colors.find(c => !game.players.map(p=>p.color).includes(c)) || 'gray';
                 const botId = `bot-${roomId}-${game.players.length}`;
                 game.players.push({
@@ -172,7 +234,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 各種アクション
     const wrap = (fn) => (data) => { const r = getRoomId(socket); if(r && rooms[r]) fn(r, socket.id, data); };
     socket.on('buildSettlement', wrap(handleBuildSettlement));
     socket.on('buildRoad', wrap(handleBuildRoad));
@@ -183,33 +244,15 @@ io.on('connection', (socket) => {
     socket.on('playCard', wrap(handlePlayCard));
     socket.on('moveRobber', wrap(handleMoveRobber));
     socket.on('buildCity', wrap(handleBuildCity));
-    socket.on('chatMessage', (msg) => { 
-        const r=getRoomId(socket); if(r){ 
-            const p=rooms[r].players.find(pl=>pl.id===socket.id); 
-            const chat={name:p?p.name:"観戦", msg, color:p?p.color:'#666'};
-            rooms[r].chats.push(chat); if(rooms[r].chats.length>50)rooms[r].chats.shift(); 
-            io.to(r).emit('chatUpdate', chat); 
-        } 
-    });
-    socket.on('discardResources', (d) => { 
-        const r=getRoomId(socket); if(r){ 
-            const g=rooms[r], p=g.players.find(pl=>pl.id===socket.id); 
-            if(g.phase==='BURST'&&g.burstPlayers.includes(p.id)){ 
-                for(let k in d){p.resources[k]-=d[k]; g.bank[k]+=d[k];} 
-                addLog(r,`${p.name} 資源破棄`); 
-                g.burstPlayers=g.burstPlayers.filter(id=>id!==p.id); 
-                if(g.burstPlayers.length===0){g.phase='ROBBER'; addLog(r,"盗賊移動");} 
-                io.to(r).emit('updateState',g); checkBotTurn(r); 
-            } 
-        } 
-    });
+    socket.on('chatMessage', (msg) => { const r=getRoomId(socket); if(r){ const p=rooms[r].players.find(pl=>pl.id===socket.id); rooms[r].chats.push({name:p?p.name:"観戦", msg, color:p?p.color:'#666'}); if(rooms[r].chats.length>50)rooms[r].chats.shift(); io.to(r).emit('chatUpdate', rooms[r].chats[rooms[r].chats.length-1]); } });
+    socket.on('discardResources', (d) => { const r=getRoomId(socket); if(r){ const g=rooms[r], p=g.players.find(pl=>pl.id===socket.id); if(g.phase==='BURST'&&g.burstPlayers.includes(p.id)){ for(let k in d){p.resources[k]-=d[k]; g.bank[k]+=d[k];} addLog(r,`${p.name} 資源破棄`); g.burstPlayers=g.burstPlayers.filter(id=>id!==p.id); if(g.burstPlayers.length===0){g.phase='ROBBER'; addLog(r,"盗賊移動");} io.to(r).emit('updateState',g); checkBotTurn(r); } } });
     socket.on('offerTrade', (o)=>{ const r=getRoomId(socket); if(r){ const g=rooms[r], s=g.players.find(p=>p.id===socket.id), t=g.players.find(p=>p.id===o.targetId); if(s&&t){ if(t.isBot) handleBotTrade(r,s,t,o.give,o.receive); else { g.pendingTrade={senderId:s.id, targetId:t.id, give:o.give, receive:o.receive}; io.to(t.id).emit('tradeRequested',{senderName:s.name, give:o.give, receive:o.receive}); addLog(r,`${s.name}→${t.name} 交渉`); } } } });
     socket.on('answerTrade', ({accepted})=>{ const r=getRoomId(socket); if(r){ const g=rooms[r], tr=g.pendingTrade; if(tr&&tr.targetId===socket.id){ if(accepted){ const s=g.players.find(p=>p.id===tr.senderId), t=g.players.find(p=>p.id===socket.id); if(s.resources[tr.give]>0&&t.resources[tr.receive]>0){ s.resources[tr.give]--; t.resources[tr.give]++; s.resources[tr.receive]++; t.resources[tr.receive]--; addLog(r,"成立"); } } else { io.to(tr.senderId).emit('message','拒否'); addLog(r,"決裂"); } g.pendingTrade=null; io.to(r).emit('updateState',g); } } });
     socket.on('resetGame', ()=>{ const r=getRoomId(socket); if(r){ initGame(r, rooms[r].settings); addLog(r,"リセット"); io.to(r).emit('gameStarted', rooms[r]); } });
     socket.on('disconnect', () => { const r=getRoomId(socket); if(r){ rooms[r].players=rooms[r].players.filter(p=>p.id!==socket.id); rooms[r].spectators=rooms[r].spectators.filter(id=>id!==socket.id); if(!rooms[r].players.some(p=>!p.isBot)&&!rooms[r].spectators.length) delete rooms[r]; else io.to(r).emit('updateState', rooms[r]); } });
 });
 
-// ロジック群
+// ロジック (変更なし)
 function handleBotTrade(rid,s,b,g,r){ const gm=rooms[rid]; let acc=false; if(b.resources[r]>0) acc=true; if(acc){ s.resources[g]--; b.resources[g]++; s.resources[r]++; b.resources[r]--; addLog(rid,`${b.name} 成立`); io.to(rid).emit('updateState',gm); } else io.to(s.id).emit('message','拒否'); }
 function handleRollDice(rid,pid){ const g=rooms[rid]; if(g.players[g.turnIndex].id!==pid||g.diceResult)return; g.diceResult=Math.floor(Math.random()*6)+1+Math.floor(Math.random()*6)+1; g.stats.diceHistory[g.diceResult]++; addLog(rid,`出目:${g.diceResult}`); if(g.diceResult===7){ io.to(rid).emit('playSound','robber'); if(g.settings.burstEnabled){ g.burstPlayers=[]; g.players.forEach(p=>{ const sum=Object.values(p.resources).reduce((a,b)=>a+b,0); if(sum>=8){ g.burstPlayers.push(p.id); if(p.isBot){ const d=Math.floor(sum/2); for(let i=0;i<d;i++){ const k=Object.keys(p.resources).filter(x=>p.resources[x]>0); if(k.length)p.resources[k[Math.floor(Math.random()*k.length)]]--; } g.burstPlayers=g.burstPlayers.filter(id=>id!==p.id); addLog(rid,`${p.name} 破棄`); } } }); if(g.burstPlayers.length>0){ g.phase='BURST'; addLog(rid,"バースト発生"); } else g.phase='ROBBER'; } else g.phase='ROBBER'; } else { io.to(rid).emit('playSound','dice'); g.board.hexes.forEach(h=>{ if(h.number===g.diceResult&&h.id!==g.robberHexId&&h.resource!=='desert'){ g.board.vertices.forEach(v=>{ if(Math.abs(Math.hypot(v.x-h.x,v.y-h.y)-1.0)<0.1&&v.owner){ const pl=g.players.find(p=>p.color===v.owner); const amt=v.type==='city'?2:1; if(pl&&g.bank[h.resource]>=amt){ g.bank[h.resource]-=amt; pl.resources[h.resource]+=amt; g.stats.resourceCollected[pl.id]+=amt; } } }); } }); } io.to(rid).emit('updateState',g); checkBotTurn(rid); }
 function handleEndTurn(rid,pid){ const g=rooms[rid]; if(g.players[g.turnIndex].id!==pid)return; g.players[g.turnIndex].cards.forEach(c=>c.canUse=true); g.roadBuildingCount=0; g.turnIndex=(g.turnIndex+1)%g.players.length; g.diceResult=null; g.subPhase='MAIN_ACTION'; startTimer(rid); addLog(rid,`次: ${g.players[g.turnIndex].name}`); io.to(rid).emit('playSound','turnChange'); io.to(rid).emit('updateState',g); checkBotTurn(rid); }

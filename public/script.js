@@ -68,89 +68,17 @@ function joinGame() {
     document.getElementById('start-overlay').style.display='flex';
 }
 
+// ★修正: サーバーに開始命令を送るだけにする
 function startGame() {
-    if(!gameState) return;
-    try {
-        const s = gameState.settings || {mapSize:'normal', mapType:'standard'};
-        const data = createBoardData(s.mapSize, s.mapType);
-        if(socket) {
-            socket.emit('startGame', data);
-            const btn = document.getElementById('start-btn-big');
-            if(btn) { btn.innerText="開始中..."; btn.disabled=true; }
-        }
-    } catch(e) { alert("Error: "+e); }
+    if(!socket) return;
+    socket.emit('startGame');
+    const btn = document.getElementById('start-btn-big');
+    if(btn) { btn.innerText="開始中..."; btn.disabled=true; }
 }
 
-function createBoardData(mapSize, mapType) {
-    const hexes=[],vertices=[],edges=[],ports=[]; let id=0;
-    
-    // 座標生成 (定型マップ3-4-5-4-3を確実に生成)
-    if (mapType === 'random') {
-        const targetCount = mapSize === 'extended' ? 30 : 19;
-        const qrs = new Set(['0,0']); const dirs = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
-        while(qrs.size < targetCount) {
-            const arr = Array.from(qrs); const base = arr[Math.floor(Math.random()*arr.length)].split(',').map(Number);
-            const d = dirs[Math.floor(Math.random()*6)]; qrs.add(`${base[0]+d[0]},${base[1]+d[1]}`);
-        }
-        qrs.forEach(str => {
-            const [q,r]=str.split(',').map(Number);
-            const x=Math.sqrt(3)*(q+r/2.0), y=3/2*r;
-            hexes.push({id:id++,q,r,x,y,resource:null,number:0});
-        });
-    } else {
-        let mapDef;
-        if (mapSize === 'extended') mapDef=[{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}];
-        else mapDef=[{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
-        
-        mapDef.forEach(row=>{
-            for(let i=0;i<row.count;i++){
-                const q=row.qStart+i; const r=row.r;
-                const x=Math.sqrt(3)*(q+r/2.0); const y=3/2*r;
-                hexes.push({id:id++,q,r,x,y,resource:null,number:0});
-            }
-        });
-    }
-
-    // 資源と数字
-    const count=hexes.length; const baseRes=['forest','hill','mountain','field','pasture']; const resList=['desert'];
-    if(mapSize==='extended') resList.push('desert');
-    for(let i=0;i<count-resList.length;i++) resList.push(baseRes[i%5]);
-    const res = resList.sort(()=>Math.random()-0.5);
-    
-    let baseNums = [2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12];
-    if (mapSize === 'extended') baseNums = [...baseNums, 2,3,4,5,6,8,9,10,11,12];
-    const numList=[]; let ni=0; while(numList.length<count){ numList.push(baseNums[ni%baseNums.length]); ni++; }
-    const nums=numList.sort(()=>Math.random()-0.5);
-
-    let ri=0,n_idx=0;
-    hexes.forEach(h=>{
-        h.resource = res[ri++] || 'desert';
-        if(h.resource==='desert') h.number=0; else h.number=nums[n_idx++]||7;
-    });
-
-    // 頂点・辺
-    const rawV=[]; hexes.forEach(h=>{for(let i=0;i<6;i++){const r=Math.PI/180*(60*i-30); rawV.push({x:h.x+Math.cos(r), y:h.y+Math.sin(r)});}});
-    rawV.forEach(rv=>{if(!vertices.find(v=>Math.hypot(v.x-rv.x,v.y-rv.y)<0.1)) vertices.push({id:vertices.length,x:rv.x,y:rv.y,owner:null,type:'none'});});
-    for(let i=0;i<vertices.length;i++){for(let j=i+1;j<vertices.length;j++){if(Math.hypot(vertices[i].x-vertices[j].x,vertices[i].y-vertices[j].y)<1.1) edges.push({id:edges.length,v1:vertices[i].id,v2:vertices[j].id,owner:null});}}
-    
-    // 港
-    let cx=0,cy=0; vertices.forEach(v=>{cx+=v.x; cy+=v.y;}); cx/=vertices.length; cy/=vertices.length;
-    const th=(mapType==='random'?2.0:(mapSize==='extended'?3.2:2.4));
-    const outer=vertices.filter(v=>Math.hypot(v.x-cx,v.y-cy)>th).sort((a,b)=>Math.atan2(a.y-cy,a.x-cx)-Math.atan2(b.y-cy,b.x-cx));
-    const pts=['any','pasture','any','forest','any','hill','any','field','mountain','any','any'];
-    let pi=0; 
-    for(let i=0;i<outer.length&&pi<pts.length;i+=3){
-        if(i+1<outer.length){
-            const v1=outer[i], v2=outer[i+1];
-            if(edges.some(e=>(e.v1===v1.id&&e.v2===v2.id)||(e.v1===v2.id&&e.v2===v1.id))){
-                const mx=(v1.x+v2.x)/2, my=(v1.y+v2.y)/2;
-                const ang=Math.atan2(my-cy,mx-cx);
-                ports.push({type:pts[pi++],v1:v1.id,v2:v2.id,x:mx+0.4*Math.cos(ang),y:my+0.4*Math.sin(ang)});
-            }
-        }
-    }
-    return {hexes,vertices,edges,ports};
-}
+// ... (以下、UIや描画ロジックは前回と同じですが省略せず記述します) ...
+// 前回の script.js の createBoardData 以外の部分（UI helpers, Camera, Renderなど）をそのまま使ってください。
+// 以下に改めて完全版を載せます
 
 if(socket) {
     socket.on('connect', () => { myId=socket.id; const s=document.getElementById('connection-status'); if(s){s.innerText="🟢 接続OK";s.style.color="green";} document.getElementById('join-btn').disabled=false; });
@@ -165,18 +93,23 @@ if(socket) {
     socket.on('updateState', s => {
         gameState=s;
         if(!gameState.roomId && document.getElementById('join-roomname').value) gameState.roomId=document.getElementById('join-roomname').value;
-        // 待機画面
+        // 待機画面制御
         if(s.phase==='SETUP' && s.setupStep===0 && s.turnIndex===0 && s.players.length<s.totalMaxPlayers){
+            // 開始前だが、startGameボタンはサーバー側ロジック変更により「いつでも開始可能」
+            // 既に自分が参加済みの場合は待機画面
             document.getElementById('login-screen').style.display='none';
             document.getElementById('start-overlay').style.display='flex';
             const btn=document.getElementById('start-btn-big');
-            btn.innerText=`ゲーム開始 (${s.players.length}人)`;
-            btn.disabled=false; 
+            // 人数が足りなくても強制開始できる
+            btn.innerText = `ゲーム開始 (${s.players.length}人)`;
+            btn.disabled = false;
         } else {
+            // ゲーム中
             document.getElementById('login-screen').style.display='none';
             document.getElementById('start-overlay').style.display='none';
             document.getElementById('controls').style.display='block';
         }
+        
         // バースト
         const me=s.players.find(p=>p.id===myId);
         if(me && s.phase==='BURST' && s.burstPlayers.includes(myId) && document.getElementById('burst-overlay').style.display==='none'){
@@ -188,101 +121,15 @@ if(socket) {
         if(s.phase==='GAME_OVER') { document.getElementById('winner-name').innerText=s.winner.name; document.getElementById('winner-overlay').style.display='flex'; }
         render(); updateUI();
     });
+    // ... (前回と同じイベントリスナー)
     socket.on('tradeRequested', d => { document.getElementById('req-sender').innerText=d.senderName; document.getElementById('req-give').innerText=RESOURCE_INFO[d.give].icon; document.getElementById('req-receive').innerText=RESOURCE_INFO[d.receive].icon; document.getElementById('trade-req-overlay').style.display='flex'; });
     socket.on('chatUpdate', d => { const b=document.getElementById('chat-messages'),p=document.createElement('div'); p.style.fontSize='11px'; p.innerHTML=`<span style="color:${d.color}">${d.name}</span>:${d.msg}`; b.appendChild(p); b.scrollTop=b.scrollHeight; });
     socket.on('playSound', t => playSystemSound(t));
     socket.on('message', m => alert(m));
+    socket.on('error', m => alert(m));
 }
 
-// 描画
-function render() {
-    if(!gameState || !gameState.board.hexes) return;
-    const skin=SKINS[currentSkin];
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle=skin.bg; ctx.fillRect(0,0,canvas.width,canvas.height);
-    const {hexes,edges,vertices,ports}=gameState.board;
-    const tr=(wx,wy)=>({x:wx*HEX_SIZE*camera.zoom+camera.x, y:wy*HEX_SIZE*camera.zoom+camera.y});
-    const s=HEX_SIZE*camera.zoom;
-
-    hexes.forEach(h=>{
-        const p=tr(h.x,h.y); drawHexBase(p.x,p.y,s,RESOURCE_INFO[h.resource].color);
-        if(s>15){
-            ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
-            ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=4;
-            ctx.font=`${s*0.5}px Arial`; ctx.fillText(RESOURCE_INFO[h.resource].icon,p.x,p.y-s*0.3);
-            ctx.font=`bold ${s*0.25}px Arial`; ctx.fillText(RESOURCE_INFO[h.resource].label,p.x,p.y+s*0.3);
-            ctx.shadowBlur=0;
-            if(h.number!==null && h.number!==0) drawNumberToken(p.x,p.y,h.number,s);
-        }
-        if(gameState.robberHexId===h.id)drawRobber(p.x,p.y,s);
-        if(gameState.phase==='ROBBER'&&gameState.players[gameState.turnIndex].id===myId){ctx.strokeStyle='red';ctx.lineWidth=3;ctx.stroke();}
-    });
-    if(ports)ports.forEach(p=>{
-        const v1=vertices.find(v=>v.id===p.v1),v2=vertices.find(v=>v.id===p.v2);
-        if(v1&&v2){
-            const pp=tr(p.x,p.y),p1=tr(v1.x,v1.y),p2=tr(v2.x,v2.y);
-            ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(pp.x,pp.y);ctx.lineTo(p2.x,p2.y);ctx.strokeStyle='#8B4513';ctx.lineWidth=s*0.08;ctx.stroke();
-            if(s>10){ctx.fillStyle='white';ctx.beginPath();ctx.arc(pp.x,pp.y,s*0.25,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='black';ctx.font=`${s*0.15}px Arial`; if(p.type==='any') ctx.fillText('3:1',pp.x,pp.y); else { ctx.fillText(RESOURCE_INFO[p.type].icon,pp.x,pp.y-s*0.08); ctx.fillText('2:1',pp.x,pp.y+s*0.1); }}
-        }
-    });
-    edges.forEach(e=>{
-        const v1=vertices.find(v=>v.id===e.v1),v2=vertices.find(v=>v.id===e.v2);
-        if(v1&&v2){ const p1=tr(v1.x,v1.y),p2=tr(v2.x,v2.y); if(e.owner)drawRoad(p1.x,p1.y,p2.x,p2.y,e.owner,s); else{ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=s*0.08;ctx.stroke();} }
-    });
-    vertices.forEach(v=>{ const p=tr(v.x,v.y); if(v.owner){if(v.type==='city')drawCity(p.x,p.y,v.owner,s);else drawSettlement(p.x,p.y,v.owner,s);}else{ctx.fillStyle='rgba(255,255,255,0.5)';ctx.beginPath();ctx.arc(p.x,p.y,s*0.1,0,Math.PI*2);ctx.fill();} });
-}
-function drawHexBase(x,y,s,c){ctx.beginPath();for(let i=0;i<6;i++){const r=Math.PI/180*(60*i-30);ctx.lineTo(x+s*Math.cos(r),y+s*Math.sin(r));}ctx.closePath();ctx.fillStyle=c;ctx.fill();ctx.strokeStyle='#654321';ctx.lineWidth=s*0.04;ctx.stroke();}
-function drawNumberToken(x,y,n,s){if(!n)return;ctx.fillStyle='rgba(255,255,255,0.9)';ctx.beginPath();ctx.arc(x,y,s*0.3,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=(n===6||n===8)?'#D32F2F':'black';ctx.font=`bold ${s*0.25}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(n,x,y);const dots=(n===2||n===12)?1:(n===3||n===11)?2:(n===4||n===10)?3:(n===5||n===9)?4:5;ctx.font=`${s*0.1}px Arial`;ctx.fillText('.'.repeat(dots),x,y+s*0.15);}
-function drawRobber(x,y,s){ctx.fillStyle='rgba(0,0,0,0.6)';ctx.beginPath();ctx.arc(x,y,s*0.2,0,Math.PI*2);ctx.fill();}
-function drawRoad(x1,y1,x2,y2,c,s){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle='black';ctx.lineWidth=s*0.15;ctx.stroke();ctx.strokeStyle=c;ctx.lineWidth=s*0.1;ctx.stroke();}
-function drawSettlement(x,y,c,s){const w=s*0.15;ctx.beginPath();ctx.rect(x-w,y-w,w*2,w*2);ctx.fillStyle=c;ctx.fill();ctx.stroke();}
-function drawCity(x,y,c,s){const w=s*0.2;ctx.beginPath();ctx.arc(x,y,w,0,Math.PI*2);ctx.fillStyle=c;ctx.fill();ctx.strokeStyle='gold';ctx.lineWidth=2;ctx.stroke();}
-
-// カメラ操作
-canvas.addEventListener('mousedown',e=>{isDragging=true;lastPointer={x:e.clientX,y:e.clientY};});
-canvas.addEventListener('mousemove',e=>{if(isDragging){camera.x+=e.clientX-lastPointer.x;camera.y+=e.clientY-lastPointer.y;lastPointer={x:e.clientX,y:e.clientY};render();}});
-canvas.addEventListener('mouseup',()=>isDragging=false);
-canvas.addEventListener('wheel',e=>{e.preventDefault();const nz=camera.zoom-e.deltaY*0.001;camera.zoom=Math.min(Math.max(nz,0.5),3.0);render();},{passive:false});
-canvas.addEventListener('touchstart',e=>{if(e.touches.length===1){isDragging=true;lastPointer={x:e.touches[0].clientX,y:e.touches[0].clientY};}else if(e.touches.length===2){isDragging=false;const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lastPinchDist=Math.sqrt(dx*dx+dy*dy);}},{passive:false});
-canvas.addEventListener('touchmove',e=>{e.preventDefault();if(e.touches.length===1&&isDragging){camera.x+=e.touches[0].clientX-lastPointer.x;camera.y+=e.touches[0].clientY-lastPointer.y;lastPointer={x:e.touches[0].clientX,y:e.touches[0].clientY};render();}else if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const d=Math.sqrt(dx*dx+dy*dy);camera.zoom=Math.min(Math.max(camera.zoom+(d-lastPinchDist)*0.005,0.5),3.0);lastPinchDist=d;render();}},{passive:false});
-canvas.addEventListener('touchend',()=>isDragging=false);
-
-// クリック判定
-canvas.addEventListener('click', e => {
-    if(!gameState || isDragging) return;
-    const cur = gameState.players[gameState.turnIndex];
-    if(cur.id !== myId) return;
-    const rect = canvas.getBoundingClientRect();
-    const worldX = (e.clientX - rect.left - camera.x) / (HEX_SIZE * camera.zoom);
-    const worldY = (e.clientY - rect.top - camera.y) / (HEX_SIZE * camera.zoom);
-
-    if(gameState.phase === 'ROBBER') {
-        let tH=null, minD=1.0;
-        gameState.board.hexes.forEach(h=>{ const d=Math.hypot(h.x - worldX, h.y - worldY); if(d<minD){ minD=d; tH=h; }});
-        if(tH) socket.emit('moveRobber', tH.id);
-        return;
-    }
-    if(gameState.phase==='SETUP' || (gameState.phase==='MAIN'&&gameState.diceResult)) {
-        if(gameState.phase==='MAIN' && !buildMode) return;
-        if(gameState.phase==='SETUP' || buildMode==='settlement' || buildMode==='city') {
-            let tV=null, minD=0.3;
-            gameState.board.vertices.forEach(v=>{ const d=Math.hypot(v.x - worldX, v.y - worldY); if(d<minD){ minD=d; tV=v; }});
-            if(tV) { if(buildMode==='city') socket.emit('buildCity', tV.id); else socket.emit('buildSettlement', tV.id); if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); } return; }
-        }
-        if(gameState.phase==='SETUP' || buildMode==='road') {
-            let tE=null, minD=0.3;
-            gameState.board.edges.forEach(e=>{
-                const v1=gameState.board.vertices.find(v=>v.id===e.v1), v2=gameState.board.vertices.find(v=>v.id===e.v2);
-                const mx=(v1.x+v2.x)/2, my=(v1.y+v2.y)/2;
-                const d=Math.hypot(mx - worldX, my - worldY);
-                if(d<minD){ minD=d; tE=e; }
-            });
-            if(tE) { socket.emit('buildRoad', tE.id); if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); } }
-        }
-    }
-});
-
-// UI helpers
+// UI Helpers
 function playDiceAnim(){const ov=document.getElementById('dice-anim-overlay');ov.style.display='flex';const d1=document.getElementById('die1'),d2=document.getElementById('die2');let c=0;const t=setInterval(()=>{d1.innerText=Math.floor(Math.random()*6)+1;d2.innerText=Math.floor(Math.random()*6)+1;c++;if(c>8){clearInterval(t);ov.style.display='none';socket.emit('rollDice');}},100);}
 function endTurn(){buildMode=null;updateBuildMsg();socket.emit('endTurn');}
 function sendTrade(){const t=document.getElementById('trade-target').value,g=document.getElementById('trade-give').value,r=document.getElementById('trade-receive').value;if(g===r)return alert('同じ資源');if(t==='bank'||t==='bot')socket.emit('trade',{target:t,give:g,receive:r});else socket.emit('offerTrade',{targetId:t,give:g,receive:r});}
@@ -296,34 +143,106 @@ function toggleMenu() { document.getElementById('side-menu').classList.toggle('h
 function syncVolume(val) { const p=document.getElementById('pc-volume'), m=document.getElementById('mobile-volume'); if(p)p.value=val; if(m)m.value=val; }
 function resetGame() { if(confirm("リセットしますか？")) { socket.emit('resetGame'); if(window.innerWidth<600) toggleMenu(); } }
 function playSystemSound(type) { const vol = document.getElementById('pc-volume')?document.getElementById('pc-volume').value:0.3; if(vol>0) new Audio(`sounds/${type}.mp3`).play().catch(()=>{}); }
+let burstDrop={forest:0,hill:0,mountain:0,field:0,pasture:0}, burstTargetCount=0;
 function updateBurstUI(){const p=gameState.players.find(pl=>pl.id===myId);if(!p)return;const t=Object.values(burstDrop).reduce((a,b)=>a+b,0);let h="";Object.keys(p.resources).forEach(r=>{if(p.resources[r]>0){h+=`<div style="margin:5px;">${RESOURCE_INFO[r].icon}: <button onclick="burstDrop['${r}'] = Math.max(0, burstDrop['${r}']-1); updateBurstUI();">-</button> ${burstDrop[r]} / ${p.resources[r]} <button onclick="if(burstDrop['${r}'] < p.resources['${r}']) burstDrop['${r}']++; updateBurstUI();">+</button></div>`;}});document.getElementById('burst-selector').innerHTML=h;document.getElementById('burst-count').innerText=`${t}/${burstTargetCount}`;}
 function submitBurst(){const t=Object.values(burstDrop).reduce((a,b)=>a+b,0);if(t!==burstTargetCount)return alert(`あと${burstTargetCount-t}枚`);socket.emit('discardResources',burstDrop);document.getElementById('burst-overlay').style.display='none';}
 function answerTrade(a){socket.emit('answerTrade',{accepted:a});document.getElementById('trade-req-overlay').style.display='none';}
 
+// Camera & Render
+canvas.addEventListener('mousedown', e=>{isDragging=true;lastPointer={x:e.clientX,y:e.clientY};});
+canvas.addEventListener('mousemove', e=>{if(isDragging){camera.x+=e.clientX-lastPointer.x;camera.y+=e.clientY-lastPointer.y;lastPointer={x:e.clientX,y:e.clientY};render();}});
+canvas.addEventListener('mouseup', ()=>isDragging=false);
+canvas.addEventListener('wheel', e=>{e.preventDefault();const nz=camera.zoom-e.deltaY*0.001;camera.zoom=Math.min(Math.max(nz,0.5),3.0);render();},{passive:false});
+canvas.addEventListener('touchstart', e=>{if(e.touches.length===1){isDragging=true;lastPointer={x:e.touches[0].clientX,y:e.touches[0].clientY};}else if(e.touches.length===2){isDragging=false;const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lastPinchDist=Math.sqrt(dx*dx+dy*dy);}},{passive:false});
+canvas.addEventListener('touchmove', e=>{e.preventDefault();if(e.touches.length===1&&isDragging){camera.x+=e.touches[0].clientX-lastPointer.x;camera.y+=e.touches[0].clientY-lastPointer.y;lastPointer={x:e.touches[0].clientX,y:e.touches[0].clientY};render();}else if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const d=Math.sqrt(dx*dx+dy*dy);camera.zoom=Math.min(Math.max(camera.zoom+(d-lastPinchDist)*0.005,0.5),3.0);lastPinchDist=d;render();}},{passive:false});
+canvas.addEventListener('touchend', ()=>isDragging=false);
+
+function render(){
+    if(!gameState||!gameState.board.hexes)return;
+    const skin = SKINS[currentSkin];
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle=skin.bg; ctx.fillRect(0,0,canvas.width,canvas.height);
+    const {hexes,edges,vertices,ports}=gameState.board;
+    const tr = (wx,wy)=>({x:wx*HEX_SIZE*camera.zoom+camera.x, y:wy*HEX_SIZE*camera.zoom+camera.y});
+    const s = HEX_SIZE*camera.zoom;
+
+    hexes.forEach(h=>{
+        const p=tr(h.x,h.y); drawHexBase(p.x,p.y,s,RESOURCE_INFO[h.resource].color);
+        if(s>15){
+            ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.font=`${s*0.5}px Arial`; ctx.fillText(RESOURCE_INFO[h.resource].icon,p.x,p.y-s*0.3);
+            ctx.font=`bold ${s*0.25}px Arial`; ctx.fillText(RESOURCE_INFO[h.resource].label,p.x,p.y+s*0.3);
+            if(h.number!==null && h.number!==0) drawNumberToken(p.x,p.y,h.number,s);
+        }
+        if(gameState.robberHexId===h.id)drawRobber(p.x,p.y,s);
+        if(gameState.phase==='ROBBER'&&gameState.players[gameState.turnIndex].id===myId){ctx.strokeStyle='red';ctx.lineWidth=3;ctx.stroke();}
+    });
+    // 港
+    if(ports) ports.forEach(p=>{
+        const v1=vertices.find(v=>v.id===p.v1),v2=vertices.find(v=>v.id===p.v2);
+        if(v1&&v2){
+            const pp=tr(p.x,p.y),p1=tr(v1.x,v1.y),p2=tr(v2.x,v2.y);
+            ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(pp.x,pp.y);ctx.lineTo(p2.x,p2.y);ctx.strokeStyle='#8B4513';ctx.lineWidth=s*0.08;ctx.stroke();
+            if(s>10){ctx.fillStyle='white';ctx.beginPath();ctx.arc(pp.x,pp.y,s*0.25,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='black';ctx.font=`${s*0.15}px Arial`; if(p.type==='any') ctx.fillText('3:1',pp.x,pp.y); else { ctx.fillText(RESOURCE_INFO[p.type].icon,pp.x,pp.y-s*0.08); ctx.fillText('2:1',pp.x,pp.y+s*0.1); }}
+        }
+    });
+    // 道
+    edges.forEach(e=>{
+        const v1=vertices.find(v=>v.id===e.v1),v2=vertices.find(v=>v.id===e.v2);
+        if(v1&&v2){ const p1=tr(v1.x,v1.y),p2=tr(v2.x,v2.y); if(e.owner)drawRoad(p1.x,p1.y,p2.x,p2.y,e.owner,s); else{ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=s*0.08;ctx.stroke();} }
+    });
+    // 建物
+    vertices.forEach(v=>{ const p=tr(v.x,v.y); if(v.owner){if(v.type==='city')drawCity(p.x,p.y,v.owner,s);else drawSettlement(p.x,p.y,v.owner,s);}else{ctx.fillStyle='rgba(255,255,255,0.5)';ctx.beginPath();ctx.arc(p.x,p.y,s*0.1,0,Math.PI*2);ctx.fill();} });
+}
+// 描画パーツ
+function drawHexBase(x,y,s,c){ctx.beginPath();for(let i=0;i<6;i++){const r=Math.PI/180*(60*i-30);ctx.lineTo(x+s*Math.cos(r),y+s*Math.sin(r));}ctx.closePath();ctx.fillStyle=c;ctx.fill();ctx.strokeStyle='#654321';ctx.lineWidth=s*0.04;ctx.stroke();}
+function drawNumberToken(x,y,n,s){if(!n)return;ctx.fillStyle='rgba(255,255,255,0.9)';ctx.beginPath();ctx.arc(x,y,s*0.3,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=(n===6||n===8)?'#D32F2F':'black';ctx.font=`bold ${s*0.25}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(n,x,y);}
+function drawRobber(x,y,s){ctx.fillStyle='rgba(0,0,0,0.6)';ctx.beginPath();ctx.arc(x,y,s*0.2,0,Math.PI*2);ctx.fill();}
+function drawRoad(x1,y1,x2,y2,c,s){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle='black';ctx.lineWidth=s*0.15;ctx.stroke();ctx.strokeStyle=c;ctx.lineWidth=s*0.1;ctx.stroke();}
+function drawSettlement(x,y,c,s){const w=s*0.15;ctx.beginPath();ctx.rect(x-w,y-w,w*2,w*2);ctx.fillStyle=c;ctx.fill();ctx.stroke();}
+function drawCity(x,y,c,s){const w=s*0.2;ctx.beginPath();ctx.arc(x,y,w,0,Math.PI*2);ctx.fillStyle=c;ctx.fill();ctx.strokeStyle='gold';ctx.lineWidth=2;ctx.stroke();}
+
 // Update UI
 function updateUI() {
-    const isMobile=window.innerWidth<600; const p=gameState.players.find(pl=>pl.id===myId);
-    const sel=document.getElementById('trade-target');
-    if(sel.options.length<=2){ gameState.players.forEach(pl=>{ if(pl.id!==myId&&!pl.isBot){ const opt=document.createElement('option'); opt.value=pl.id; opt.innerText=pl.name; sel.appendChild(opt); } }); }
-    const t=document.getElementById(isMobile?'timer-display':'pc-timer'); if(t)t.innerText=gameState.timer;
+    const isMobile = window.innerWidth < 600;
+    const myPlayer = gameState.players.find(p=>p.id===myId);
+    
+    // トレードプルダウン
+    const sel = document.getElementById('trade-target');
+    if(sel.options.length <= 2) { 
+        gameState.players.forEach(pl => { 
+            if(pl.id!==myId&&!pl.isBot){ const opt=document.createElement('option'); opt.value=pl.id; opt.innerText=pl.name; sel.appendChild(opt); } 
+        });
+    }
+    const t=document.getElementById(isMobile?'timer-display':'pc-timer'); if(t) t.innerText=gameState.timer;
     
     const logsHTML=gameState.logs.map(l=>`<div>${l}</div>`).join('');
     const bankHTML=Object.keys(gameState.bank).map(k=>`<div>${RESOURCE_INFO[k].icon} ${gameState.bank[k]}</div>`).join('');
-    const myResHTML=p?Object.keys(p.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${p.resources[k]}</div>`).join(''):"";
-    const myCardsHTML=(p&&p.cards.length>0)?p.cards.map(c=>`<div>${getCardName(c.type)}</div>`).join(''):"なし";
+    const myResHTML=myPlayer?Object.keys(myPlayer.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${myPlayer.resources[k]}</div>`).join(''):"";
+    const myCardsHTML=(myPlayer&&myPlayer.cards.length>0)?myPlayer.cards.map(c=>`<div>${getCardName(c.type)}</div>`).join(''):"なし";
     const scoreHTML=gameState.players.map(p=>`<div style="color:${p.color};font-weight:bold;">${p.name}: ${p.victoryPoints}</div>`).join('');
     
-    let prodHTML=""; if(p&&gameState.board.hexes){ const prod={}; gameState.board.hexes.forEach(h=>{ if(h.resource==='desert'||h.id===gameState.robberHexId)return; const isAdj=gameState.board.vertices.some(v=>v.owner===p.color&&Math.abs(Math.hypot(v.x-h.x,v.y-h.y)-1.0)<0.1); if(isAdj){if(!prod[h.number])prod[h.number]=[];const ic=RESOURCE_INFO[h.resource].icon;if(prod[h.number].filter(x=>x===ic).length<2)prod[h.number].push(ic);} }); const nums=Object.keys(prod).sort((a,b)=>a-b); prodHTML=nums.map(n=>`<div><strong>${n}:</strong> ${prod[n].join('')}</div>`).join(''); }
+    let prodHTML = "";
+    if (myPlayer && gameState.board.hexes) {
+        const prod = {};
+        gameState.board.hexes.forEach(h => {
+            if (h.resource==='desert' || h.id===gameState.robberHexId) return;
+            const isAdj = gameState.board.vertices.some(v => v.owner === myPlayer.color && Math.abs(Math.hypot(v.x - h.x, v.y - h.y) - 1.0) < 0.1);
+            if (isAdj) { if (!prod[h.number]) prod[h.number] = []; const icon = RESOURCE_INFO[h.resource].icon; if(prod[h.number].filter(x => x === icon).length < 2) prod[h.number].push(icon); }
+        });
+        const nums = Object.keys(prod).sort((a,b)=>a-b);
+        prodHTML = nums.map(n => `<div><strong>${n}:</strong> ${prod[n].join('')}</div>`).join('');
+    }
 
-    if(isMobile){
+    if(isMobile) {
         document.getElementById('mobile-log-area').innerHTML=logsHTML;
         document.getElementById('mobile-bank-res').innerHTML=bankHTML;
         document.getElementById('mobile-my-res').innerHTML=myResHTML;
         document.getElementById('mobile-my-cards').innerHTML=myCardsHTML;
         document.getElementById('mobile-prod-list').innerHTML=prodHTML;
         document.getElementById('mobile-score-board').innerHTML=scoreHTML;
-        document.getElementById('mini-res').innerText = p ? `🎒 木${p.resources.forest} 土${p.resources.hill} 鉄${p.resources.mountain} 麦${p.resources.field} 羊${p.resources.pasture}`:"";
-        document.getElementById('mini-score').innerText = p ? `🏆 ${p.victoryPoints}点`:"";
+        document.getElementById('mini-res').innerText = myPlayer ? `🎒 木${myPlayer.resources.forest} 土${myPlayer.resources.hill} 鉄${myPlayer.resources.mountain} 麦${myPlayer.resources.field} 羊${myPlayer.resources.pasture}`:"";
+        document.getElementById('mini-score').innerText = myPlayer ? `🏆 ${myPlayer.victoryPoints}点`:"";
         document.getElementById('mobile-game-info').innerHTML = `手番: <span style="color:${gameState.players[gameState.turnIndex].color}">${gameState.players[gameState.turnIndex].name}</span> (${gameState.phase})`;
     } else {
         const l=document.getElementById('pc-log-area'); l.innerHTML=logsHTML; l.scrollTop=l.scrollHeight;
@@ -352,3 +271,40 @@ function updateUI() {
         controls.style.display='none'; document.getElementById('action-msg').innerText="待機中...";
     }
 }
+
+// クリック判定
+canvas.addEventListener('click', e => {
+    if(!gameState || isDragging) return;
+    const cur = gameState.players[gameState.turnIndex];
+    if(cur.id !== myId) return;
+    const rect = canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const worldX = (screenX - camera.x) / (HEX_SIZE * camera.zoom);
+    const worldY = (screenY - camera.y) / (HEX_SIZE * camera.zoom);
+
+    if(gameState.phase === 'ROBBER') {
+        let tH=null, minD=1.0;
+        gameState.board.hexes.forEach(h=>{ const d=Math.hypot(h.x - worldX, h.y - worldY); if(d<minD){ minD=d; tH=h; }});
+        if(tH) socket.emit('moveRobber', tH.id);
+        return;
+    }
+    if(gameState.phase==='SETUP' || (gameState.phase==='MAIN'&&gameState.diceResult)) {
+        if(gameState.phase==='MAIN' && !buildMode) return;
+        if(gameState.phase==='SETUP' || buildMode==='settlement' || buildMode==='city') {
+            let tV=null, minD=0.3;
+            gameState.board.vertices.forEach(v=>{ const d=Math.hypot(v.x - worldX, v.y - worldY); if(d<minD){ minD=d; tV=v; }});
+            if(tV) { if(buildMode==='city') socket.emit('buildCity', tV.id); else socket.emit('buildSettlement', tV.id); if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); } return; }
+        }
+        if(gameState.phase==='SETUP' || buildMode==='road') {
+            let tE=null, minD=0.3;
+            gameState.board.edges.forEach(e=>{
+                const v1=gameState.board.vertices.find(v=>v.id===e.v1), v2=gameState.board.vertices.find(v=>v.id===e.v2);
+                const mx=(v1.x+v2.x)/2, my=(v1.y+v2.y)/2;
+                const d=Math.hypot(mx - worldX, my - worldY);
+                if(d<minD){ minD=d; tE=e; }
+            });
+            if(tE) { socket.emit('buildRoad', tE.id); if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); } }
+        }
+    }
+});
