@@ -3,7 +3,7 @@ try {
     socket = io();
 } catch (e) {
     console.error("Socket Error:", e);
-    alert("サーバー接続エラー: リロードしてください");
+    alert("通信エラー: リロードしてください");
 }
 
 // ==========================================
@@ -28,11 +28,14 @@ const ctx = canvas.getContext('2d');
 let HEX_SIZE = 60;
 let gameState = null;
 let myId = null;
-let buildMode = null; // MAINフェーズ用
+let buildMode = null; 
 
-// カメラ
+// カメラ・操作変数
 let camera = { x: 0, y: 0, zoom: 1.0 };
 let isDragging = false;
+let touchStartTime = 0;
+let touchStartX = 0;
+let touchStartY = 0;
 let lastPointer = { x: 0, y: 0 };
 let lastPinchDist = 0;
 
@@ -65,7 +68,6 @@ function resizeCanvas() {
     canvas.height = window.innerHeight;
     
     const isMobile = canvas.width < 600;
-    // 初回カメラ位置設定
     if (camera.x === 0 && camera.y === 0) {
         camera.x = canvas.width / 2;
         camera.y = canvas.height * (isMobile ? 0.45 : 0.5);
@@ -75,8 +77,7 @@ function resizeCanvas() {
     const isExtended = (gameState && gameState.settings && gameState.settings.mapSize === 'extended');
     const scaleFactor = isExtended ? 16 : 11;
     
-    // スマホ用に少し大きめに表示
-    HEX_SIZE = Math.max(isMobile ? 42 : 50, minDim / scaleFactor);
+    HEX_SIZE = Math.max(isMobile ? 40 : 50, minDim / scaleFactor);
     
     if (gameState) render();
 }
@@ -152,7 +153,6 @@ if (socket) {
                 `設定: 人間${state.settings.humanLimit}人 + Bot${state.settings.botCount}`;
         }
         
-        // 初回配置へ
         camera.x = canvas.width / 2;
         camera.y = canvas.height * (window.innerWidth < 600 ? 0.45 : 0.5);
         resizeCanvas();
@@ -184,13 +184,13 @@ if (socket) {
                 document.getElementById('controls').style.display = 'none';
                 const btn = document.getElementById('start-btn-big');
                 if (btn) {
-                    btn.innerText = `ゲーム開始 (現在${state.players.length}人)`;
+                    btn.innerText = `ゲーム開始 (${state.players.length}人参加中)`;
                     btn.disabled = false;
                 }
             }
         }
 
-        // バースト画面制御
+        // バースト
         const myPlayer = state.players.find(p => p.id === myId);
         const burstOverlay = document.getElementById('burst-overlay');
         if (myPlayer && state.phase === 'BURST' && state.burstPlayers.includes(myId)) {
@@ -204,11 +204,10 @@ if (socket) {
             burstOverlay.style.display = 'none';
         }
 
-        // 終了画面
+        // 終了
         if (state.phase === 'GAME_OVER') {
             document.getElementById('winner-name').innerText = state.winner.name;
             let h = "<h3>結果詳細</h3>";
-            h += "<div>🎲 出目履歴:<br>" + state.stats.diceHistory.map((c,i)=> i>=2?`${i}:${c}回`:'').join(' ') + "</div>";
             h += "<div>💰 獲得資源:<br>" + Object.keys(state.stats.resourceCollected).map(pid=>{
                 const p=state.players.find(pl=>pl.id===pid); return p?`${p.name}:${state.stats.resourceCollected[pid]}`:"";
             }).join('<br>') + "</div>";
@@ -243,7 +242,7 @@ if (socket) {
 }
 
 // ==========================================
-// 4. アクション
+// 4. アクション関数
 // ==========================================
 
 function createRoom() {
@@ -387,7 +386,6 @@ function render() {
         const p = tr(h.x, h.y);
         drawHexBase(p.x, p.y, s, RESOURCE_INFO[h.resource].color);
         
-        // 詳細描画 (文字・数字)
         if (s > 15) {
             ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.shadowBlur = 3; ctx.shadowColor = 'rgba(0,0,0,0.6)';
@@ -400,7 +398,7 @@ function render() {
             
             ctx.shadowBlur = 0;
             
-            // ★数字表示制御 (SETUP中は設定により隠す)
+            // 数字表示制御
             let showNum = true;
             if (gameState.settings && gameState.settings.hideNumbers && gameState.phase === 'SETUP') {
                 showNum = false;
@@ -453,15 +451,25 @@ function render() {
         }
     });
 
-    // 建物 (SETUPフェーズで自分のターンの場合、建設可能な場所をハイライトしてもよいが、シンプルに全部描画)
+    // 建物
     vertices.forEach(v => {
         const p = tr(v.x, v.y);
         if (v.owner) {
             if (v.type === 'city') drawCity(p.x, p.y, v.owner, s);
             else drawSettlement(p.x, p.y, v.owner, s);
         } else {
-            // 空の交差点
-            ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(p.x, p.y, s*0.1, 0, Math.PI*2); ctx.fill();
+            // ★ガイド表示: SETUP中に自分のターンなら、建設可能な場所を光らせる
+            if (gameState.phase === 'SETUP' && gameState.players[gameState.turnIndex].id === myId) {
+                if (gameState.subPhase === 'SETTLEMENT') {
+                    // 建物がない場所
+                    ctx.fillStyle = 'rgba(255,255,255,0.8)'; 
+                    ctx.beginPath(); ctx.arc(p.x, p.y, s*0.15, 0, Math.PI*2); ctx.fill();
+                    ctx.strokeStyle = 'red'; ctx.lineWidth = 2; ctx.stroke();
+                }
+            } else {
+                ctx.fillStyle = 'rgba(255,255,255,0.4)'; 
+                ctx.beginPath(); ctx.arc(p.x, p.y, s*0.1, 0, Math.PI*2); ctx.fill();
+            }
         }
     });
 }
@@ -569,85 +577,155 @@ function updateUI() {
 }
 
 // ==========================================
-// 6. 操作 (カメラ & クリック)
+// 6. 操作 (タップ判定強化版)
 // ==========================================
-canvas.addEventListener('mousedown', e=>{isDragging=true; lastPointer={x:e.clientX, y:e.clientY};});
-canvas.addEventListener('mousemove', e=>{if(isDragging){camera.x+=e.clientX-lastPointer.x; camera.y+=e.clientY-lastPointer.y; lastPointer={x:e.clientX, y:e.clientY}; render();}});
-canvas.addEventListener('mouseup', ()=>isDragging=false);
-canvas.addEventListener('mouseleave', ()=>isDragging=false);
-canvas.addEventListener('wheel', e=>{e.preventDefault(); const nz=camera.zoom-e.deltaY*0.001; camera.zoom=Math.min(Math.max(nz,0.5),3.0); render();}, {passive:false});
-canvas.addEventListener('touchstart', e=>{if(e.touches.length===1){isDragging=true; lastPointer={x:e.touches[0].clientX, y:e.touches[0].clientY};} else if(e.touches.length===2){isDragging=false; const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; lastPinchDist=Math.sqrt(dx*dx+dy*dy);}}, {passive:false});
-canvas.addEventListener('touchmove', e=>{e.preventDefault(); if(e.touches.length===1 && isDragging){camera.x+=e.touches[0].clientX-lastPointer.x; camera.y+=e.touches[0].clientY-lastPointer.y; lastPointer={x:e.touches[0].clientX, y:e.touches[0].clientY}; render();} else if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; const d=Math.sqrt(dx*dx+dy*dy); camera.zoom=Math.min(Math.max(camera.zoom+(d-lastPinchDist)*0.005,0.5),3.0); lastPinchDist=d; render();}}, {passive:false});
-canvas.addEventListener('touchend', ()=>isDragging=false);
 
-// ★クリック判定 (最強版: 吸着)
-canvas.addEventListener('click', e => {
-    if(!gameState || isDragging) return;
+// --- タップ検出ロジック ---
+canvas.addEventListener('mousedown', e => {
+    isDragging = false;
+    touchStartX = e.clientX;
+    touchStartY = e.clientY;
+    lastPointer = {x:e.clientX, y:e.clientY};
+});
+canvas.addEventListener('mousemove', e => {
+    // 5px以上動いたらドラッグとみなす
+    if(Math.hypot(e.clientX - touchStartX, e.clientY - touchStartY) > 5) {
+        isDragging = true;
+    }
+    if(isDragging){
+        camera.x += e.clientX - lastPointer.x; 
+        camera.y += e.clientY - lastPointer.y; 
+        lastPointer={x:e.clientX, y:e.clientY}; 
+        render();
+    }
+});
+canvas.addEventListener('mouseup', e => {
+    if(!isDragging) handleClick(e.clientX, e.clientY);
+    isDragging = false;
+});
+
+// スマホ
+canvas.addEventListener('touchstart', e => {
+    if(e.touches.length === 1) {
+        isDragging = false;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        lastPointer = {x: touchStartX, y: touchStartY};
+    } else if (e.touches.length === 2) {
+        isDragging = true; // ピンチ中はドラッグ扱い
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastPinchDist = Math.sqrt(dx*dx + dy*dy);
+    }
+}, {passive:false});
+
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault(); // スクロール防止
+    if(e.touches.length === 1) {
+        const cx = e.touches[0].clientX;
+        const cy = e.touches[0].clientY;
+        if(Math.hypot(cx - touchStartX, cy - touchStartY) > 5) isDragging = true;
+        
+        if(isDragging) {
+            camera.x += cx - lastPointer.x;
+            camera.y += cy - lastPointer.y;
+            lastPointer = {x:cx, y:cy};
+            render();
+        }
+    } else if(e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        camera.zoom = Math.min(Math.max(camera.zoom + (dist - lastPinchDist) * 0.005, 0.5), 3.0);
+        lastPinchDist = dist;
+        render();
+    }
+}, {passive:false});
+
+canvas.addEventListener('touchend', e => {
+    // 指を離した時、ドラッグしていなければタップとみなす
+    if(!isDragging) {
+        // touchendにはtouchesがないのでchangedTouchesを使う
+        if(e.changedTouches.length > 0) {
+            handleClick(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+        }
+    }
+    isDragging = false;
+});
+
+// --- 共通クリック処理 ---
+function handleClick(clickX, clickY) {
+    if(!gameState) return;
     const cur = gameState.players[gameState.turnIndex];
-    if(cur.id !== myId) return;
+    if(cur.id !== myId) return; // 自分の番以外は無視
     
     const rect = canvas.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const cy = e.clientY - rect.top;
+    const cx = clickX - rect.left;
+    const cy = clickY - rect.top;
     
-    // 画面座標変換ヘルパー
-    const tr=(wx,wy)=>({x:wx*HEX_SIZE*camera.zoom+camera.x, y:wy*HEX_SIZE*camera.zoom+camera.y});
+    // 描画座標計算ヘルパー
+    const tr = (wx, wy) => ({
+        x: wx * HEX_SIZE * camera.zoom + camera.x,
+        y: wy * HEX_SIZE * camera.zoom + camera.y
+    });
 
-    // 1. 盗賊
-    if(gameState.phase==='ROBBER'){
-        let th=null, minD=9999;
-        const hr = HEX_SIZE*camera.zoom;
-        gameState.board.hexes.forEach(h=>{ 
-            const p=tr(h.x,h.y); 
-            const d=Math.hypot(p.x-cx,p.y-cy); 
-            if(d<hr && d<minD){minD=d; th=h;} 
+    // 1. 盗賊移動
+    if(gameState.phase === 'ROBBER') {
+        let tH = null, minD = 9999;
+        const hr = HEX_SIZE * camera.zoom;
+        gameState.board.hexes.forEach(h => {
+            const p = tr(h.x, h.y);
+            const dist = Math.hypot(p.x - cx, p.y - cy);
+            // 半径より内側ならヒット
+            if(dist < hr && dist < minD) { minD = dist; tH = h; }
         });
-        if(th) socket.emit('moveRobber', th.id);
+        if(tH) socket.emit('moveRobber', tH.id);
         return;
     }
 
-    // 2. 建設モード自動判定
+    // 2. 建設 (自動判定モード)
     let mode = buildMode;
-    // SETUPフェーズなら強制的にモードを設定
-    if(gameState.phase==='SETUP') {
-        mode = (gameState.subPhase==='SETTLEMENT') ? 'settlement' : 'road';
+    if(gameState.phase === 'SETUP') {
+        mode = (gameState.subPhase === 'SETTLEMENT') ? 'settlement' : 'road';
     }
 
-    if (!mode) return; // モードがなければ何もしない
+    if (!mode) return;
 
-    // 建設: 開拓地・都市
-    if(mode==='settlement' || mode==='city'){
-        let tv=null, minD=60; // 判定半径 60px (広め)
-        gameState.board.vertices.forEach(v=>{ 
-            const p=tr(v.x,v.y); 
-            const d=Math.hypot(p.x-cx,p.y-cy); 
-            if(d<minD){minD=d; tv=v;} 
+    // 建設: 開拓地・都市 (頂点)
+    if(mode === 'settlement' || mode === 'city') {
+        let tV = null, minD = 60; // 判定範囲広め (60px)
+        gameState.board.vertices.forEach(v => {
+            const p = tr(v.x, v.y);
+            const dist = Math.hypot(p.x - cx, p.y - cy);
+            if(dist < minD) { minD = dist; tV = v; }
         });
         
-        if(tv){
-            if(mode==='city') socket.emit('buildCity', tv.id);
-            else socket.emit('buildSettlement', tv.id);
+        if(tV) {
+            if(mode === 'city') socket.emit('buildCity', tV.id);
+            else socket.emit('buildSettlement', tV.id);
             
             // MAINフェーズならモード解除
-            if(gameState.phase==='MAIN'){buildMode=null; updateBuildMsg();}
+            if(gameState.phase === 'MAIN') { buildMode = null; updateBuildMsg(); }
         }
     } 
-    // 建設: 道
-    else if(mode==='road'){
-        let te=null, minD=60;
-        gameState.board.edges.forEach(e=>{
-            const v1=gameState.board.vertices.find(v=>v.id===e.v1);
-            const v2=gameState.board.vertices.find(v=>v.id===e.v2);
-            if(v1&&v2){ 
-                const p1=tr(v1.x,v1.y), p2=tr(v2.x,v2.y); 
-                const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2; 
-                const d=Math.hypot(mx-cx,my-cy); 
-                if(d<minD){minD=d; te=e;} 
+    // 建設: 道 (辺)
+    else if(mode === 'road') {
+        let tE = null, minD = 60;
+        gameState.board.edges.forEach(e => {
+            const v1 = gameState.board.vertices.find(v => v.id === e.v1);
+            const v2 = gameState.board.vertices.find(v => v.id === e.v2);
+            if(v1 && v2) {
+                const p1 = tr(v1.x, v1.y);
+                const p2 = tr(v2.x, v2.y);
+                const mx = (p1.x + p2.x) / 2;
+                const my = (p1.y + p2.y) / 2;
+                const dist = Math.hypot(mx - cx, my - cy);
+                if(dist < minD) { minD = dist; tE = e; }
             }
         });
-        if(te){
-            socket.emit('buildRoad', te.id);
-            if(gameState.phase==='MAIN'){buildMode=null; updateBuildMsg();}
+        if(tE) {
+            socket.emit('buildRoad', tE.id);
+            if(gameState.phase === 'MAIN') { buildMode = null; updateBuildMsg(); }
         }
     }
-});
+}
