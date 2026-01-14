@@ -1,15 +1,14 @@
-// ==========================================
-// 1. 初期化・定数
-// ==========================================
 let socket;
 try {
     socket = io();
 } catch (e) {
     console.error("Socket Error:", e);
-    alert("通信エラー: リロードしてください");
+    alert("通信エラー: ページを更新してください");
 }
 
-// URLパラメータ処理
+// ==========================================
+// 1. 初期化・設定
+// ==========================================
 window.onload = function() {
     const params = new URLSearchParams(window.location.search);
     if(params.get('room')) {
@@ -31,13 +30,13 @@ let gameState = null;
 let myId = null;
 let buildMode = null; 
 
-// カメラ (初期値はリサイズ時に調整)
+// カメラ
 let camera = { x: 0, y: 0, zoom: 1.0 };
 let isDragging = false;
 let lastPointer = { x: 0, y: 0 };
 let lastPinchDist = 0;
 
-// スキン
+// デザイン
 const SKINS = {
     normal: { bg:'#87CEEB', hex:'#f0e68c', text:'#000', road:'#333' },
     dark:   { bg:'#2c3e50', hex:'#34495e', text:'#ecf0f1', road:'#fff' },
@@ -45,7 +44,6 @@ const SKINS = {
 };
 let currentSkin = 'normal';
 
-// 資源データ
 const RESOURCE_INFO = {
     forest:   { color: '#228B22', label: '木', icon: '🌲' },
     hill:     { color: '#B22222', label: '土', icon: '🧱' },
@@ -55,30 +53,27 @@ const RESOURCE_INFO = {
     desert:   { color: '#F4A460', label: '砂', icon: '🌵' }
 };
 
-// バースト・トレード用
 let burstDrop = {forest:0, hill:0, mountain:0, field:0, pasture:0};
 let burstTargetCount = 0;
 
 // ==========================================
-// 2. 画面制御・ユーティリティ
+// 2. 画面制御
 // ==========================================
 
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     
-    // UI被りを避ける中心位置
     const isMobile = canvas.width < 600;
-    // 初回のみカメラ位置を中心にセット
+    // 初回カメラ位置設定
     if (camera.x === 0 && camera.y === 0) {
         camera.x = canvas.width / 2;
         camera.y = canvas.height * (isMobile ? 0.45 : 0.5);
     }
 
-    // 画面サイズに応じたタイルの大きさ決定
     const minDim = Math.min(canvas.width, canvas.height);
     const isExtended = (gameState && gameState.settings && gameState.settings.mapSize === 'extended');
-    const scaleFactor = isExtended ? 16 : 11; // 3-4-5-4-3用に少し大きく
+    const scaleFactor = isExtended ? 16 : 11;
     
     HEX_SIZE = Math.max(isMobile ? 38 : 50, minDim / scaleFactor);
     
@@ -89,16 +84,16 @@ window.addEventListener('resize', resizeCanvas);
 function changeSkin(s) { currentSkin = s; if (gameState) render(); }
 
 function showTab(tab) {
-    const joinForm = document.getElementById('form-join');
-    const createForm = document.getElementById('form-create');
-    const tabJoin = document.getElementById('tab-join');
-    const tabCreate = document.getElementById('tab-create');
+    const j = document.getElementById('form-join');
+    const c = document.getElementById('form-create');
+    const tj = document.getElementById('tab-join');
+    const tc = document.getElementById('tab-create');
     
-    if (joinForm && createForm) {
-        joinForm.style.display = (tab === 'join') ? 'block' : 'none';
-        createForm.style.display = (tab === 'create') ? 'block' : 'none';
-        tabJoin.classList.toggle('active', tab === 'join');
-        tabCreate.classList.toggle('active', tab === 'create');
+    if(j && c) {
+        j.style.display = (tab==='join') ? 'block' : 'none';
+        c.style.display = (tab==='create') ? 'block' : 'none';
+        tj.classList.toggle('active', tab==='join');
+        tc.classList.toggle('active', tab==='create');
     }
 }
 
@@ -115,18 +110,13 @@ function copyInviteLink() {
     navigator.clipboard.writeText(url).then(()=>alert("URLコピー完了:\n"+url));
 }
 
-function toggleMenu() {
-    const m = document.getElementById('side-menu');
-    if(m) m.classList.toggle('hidden');
-}
-
-function syncVolume(val) {
+function toggleMenu() { document.getElementById('side-menu').classList.toggle('hidden'); }
+function syncVolume(val) { 
     const p = document.getElementById('pc-volume');
     const m = document.getElementById('mobile-volume');
     if(p) p.value = val;
     if(m) m.value = val;
 }
-
 function playSystemSound(type) {
     const v = document.getElementById('pc-volume');
     const vol = v ? v.value : 0.3;
@@ -134,42 +124,33 @@ function playSystemSound(type) {
 }
 
 // ==========================================
-// 3. 通信・イベントハンドリング
+// 3. 通信・イベント
 // ==========================================
 
 if (socket) {
     socket.on('connect', () => {
         myId = socket.id;
         const s = document.getElementById('connection-status');
-        if (s) { s.innerText = "🟢 接続OK"; s.style.color = "green"; }
-        const btn = document.getElementById('join-btn');
-        if (btn) btn.disabled = false;
+        if(s) { s.innerText = "🟢 接続OK"; s.style.color = "green"; }
+        document.getElementById('join-btn').disabled = false;
     });
 
     socket.on('disconnect', () => {
         const s = document.getElementById('connection-status');
-        if (s) { s.innerText = "🔴 切断"; s.style.color = "red"; }
-        const btn = document.getElementById('join-btn');
-        if (btn) btn.disabled = true;
+        if(s) { s.innerText = "🔴 切断"; s.style.color = "red"; }
+        document.getElementById('join-btn').disabled = true;
     });
 
-    // ゲーム開始シグナル
     socket.on('gameStarted', (state) => {
-        console.log("Game Started Signal Received");
         gameState = state;
-        
-        // ★強制画面切り替え
-        document.getElementById('login-screen').style.display = 'none';
         document.getElementById('start-overlay').style.display = 'none';
         document.getElementById('controls').style.display = 'block';
         
-        // 部屋情報更新
         if (state.settings) {
-            const info = document.getElementById('room-info-display');
-            if (info) info.innerText = `設定: 人間${state.settings.humanLimit}人 + Bot${state.settings.botCount}`;
+            document.getElementById('room-info-display').innerText = 
+                `設定: 人間${state.settings.humanLimit}人 + Bot${state.settings.botCount}`;
         }
-
-        // カメラリセット
+        
         camera.x = canvas.width / 2;
         camera.y = canvas.height * (window.innerWidth < 600 ? 0.45 : 0.5);
         resizeCanvas();
@@ -177,48 +158,37 @@ if (socket) {
         updateUI();
     });
 
-    // 状態更新
     socket.on('updateState', (state) => {
         gameState = state;
-        
-        // 部屋名補完
-        if (!gameState.roomId) {
-            const input = document.getElementById('join-roomname');
-            if (input && input.value) gameState.roomId = input.value;
+        if (!gameState.roomId && document.getElementById('join-roomname').value) {
+            gameState.roomId = document.getElementById('join-roomname').value;
         }
 
-        // ★画面切り替えロジック (最重要修正)
-        // 自分が参加者か確認
+        // 画面切り替え
         const me = state.players.find(p => p.id === myId) || state.spectators.includes(myId);
-        
         if (me) {
             document.getElementById('login-screen').style.display = 'none';
-
-            // マップデータがあるか確認
             const hasMap = (state.board && state.board.hexes && state.board.hexes.length > 0);
 
             if (hasMap) {
-                // マップがある = ゲーム中 (待機画面を強制非表示)
+                // ゲーム中
                 document.getElementById('start-overlay').style.display = 'none';
                 document.getElementById('controls').style.display = 'block';
-                
-                // 初回描画トリガー
                 if (canvas.width !== window.innerWidth) resizeCanvas();
                 render();
             } else {
-                // マップがない = 待機中
+                // 待機中
                 document.getElementById('start-overlay').style.display = 'flex';
                 document.getElementById('controls').style.display = 'none';
-                
                 const btn = document.getElementById('start-btn-big');
                 if (btn) {
                     btn.innerText = `ゲーム開始 (${state.players.length}人参加中)`;
-                    btn.disabled = false; // ★強制開始可能にするため常に有効化
+                    btn.disabled = false;
                 }
             }
         }
 
-        // バースト画面
+        // バースト画面制御
         const myPlayer = state.players.find(p => p.id === myId);
         const burstOverlay = document.getElementById('burst-overlay');
         if (myPlayer && state.phase === 'BURST' && state.burstPlayers.includes(myId)) {
@@ -236,10 +206,9 @@ if (socket) {
         if (state.phase === 'GAME_OVER') {
             document.getElementById('winner-name').innerText = state.winner.name;
             let h = "<h3>結果詳細</h3>";
-            h += "<div>🎲 出目:<br>" + state.stats.diceHistory.map((c,i)=> i>=2?`${i}:${c}回`:'').join(' ') + "</div>";
-            h += "<div>💰 資源:<br>" + Object.keys(state.stats.resourceCollected).map(pid=>{
-                const p = state.players.find(pl => pl.id === pid);
-                return p ? `${p.name}:${state.stats.resourceCollected[pid]}` : "";
+            h += "<div>🎲 出目履歴:<br>" + state.stats.diceHistory.map((c,i)=> i>=2?`${i}:${c}回`:'').join(' ') + "</div>";
+            h += "<div>💰 獲得資源:<br>" + Object.keys(state.stats.resourceCollected).map(pid=>{
+                const p=state.players.find(pl=>pl.id===pid); return p?`${p.name}:${state.stats.resourceCollected[pid]}`:"";
             }).join('<br>') + "</div>";
             document.getElementById('result-stats').innerHTML = h;
             document.getElementById('winner-overlay').style.display = 'flex';
@@ -272,7 +241,7 @@ if (socket) {
 }
 
 // ==========================================
-// 4. ボタンアクション
+// 4. アクション
 // ==========================================
 
 function createRoom() {
@@ -287,7 +256,8 @@ function createRoom() {
         mapSize: document.getElementById('map-size').value,
         mapType: document.getElementById('map-type').value,
         victoryPoints: document.getElementById('vp-goal').value,
-        burstEnabled: document.getElementById('burst-flag').value === 'true'
+        burstEnabled: document.getElementById('burst-flag').value === 'true',
+        hideNumbers: document.getElementById('hide-nums').value === 'true'
     };
 
     if (!socket || !socket.connected) return alert('サーバー接続中...');
@@ -304,12 +274,9 @@ function joinGame() {
 
 function startGame() {
     if (!socket) return;
-    socket.emit('startGame'); // マップ生成はサーバーに任せる
+    socket.emit('startGame');
     const btn = document.getElementById('start-btn-big');
-    if (btn) {
-        btn.innerText = "開始処理中...";
-        btn.disabled = true;
-    }
+    if (btn) { btn.innerText = "開始処理中..."; btn.disabled = true; }
 }
 
 function resetGame() {
@@ -319,7 +286,6 @@ function resetGame() {
     }
 }
 
-// ゲーム内アクション
 function playDiceAnim() {
     const ov = document.getElementById('dice-anim-overlay');
     ov.style.display = 'flex';
@@ -361,19 +327,18 @@ function setBuildMode(m) {
 
 function updateBuildMsg() {
     const m = !buildMode ? "" : (buildMode==='road'?"【建設】道":buildMode==='settlement'?"【建設】開拓":buildMode==='city'?"【建設】都市":"");
-    const pcMsg = document.getElementById('pc-build-msg');
-    if (pcMsg) pcMsg.innerText = m;
-    const actMsg = document.getElementById('action-msg');
-    if (actMsg && buildMode) actMsg.innerText = m;
+    const pc = document.getElementById('pc-build-msg');
+    if(pc) pc.innerText = m;
+    const act = document.getElementById('action-msg');
+    if(act && buildMode) act.innerText = m;
 }
 
 function getCardName(t) { return {knight:'騎士',road:'街道',plenty:'発見',monopoly:'独占',victory:'点'}[t]; }
-function sendChat() { const i=document.getElementById('chat-input'); if(i.value){socket.emit('chatMessage', i.value); i.value='';} }
+function sendChat() { const i = document.getElementById('chat-input'); if(i.value){ socket.emit('chatMessage', i.value); i.value=''; } }
 
-// バーストUI
 function updateBurstUI() {
     const p = gameState.players.find(pl => pl.id === myId);
-    if (!p) return;
+    if(!p) return;
     const total = Object.values(burstDrop).reduce((a,b)=>a+b, 0);
     let html = "";
     Object.keys(p.resources).forEach(r => {
@@ -391,7 +356,7 @@ function updateBurstUI() {
 }
 function submitBurst() {
     const total = Object.values(burstDrop).reduce((a,b)=>a+b, 0);
-    if (total !== burstTargetCount) return alert(`あと${burstTargetCount - total}枚選んでください`);
+    if(total !== burstTargetCount) return alert(`あと${burstTargetCount - total}枚`);
     socket.emit('discardResources', burstDrop);
     document.getElementById('burst-overlay').style.display = 'none';
 }
@@ -401,7 +366,7 @@ function answerTrade(a) { socket.emit('answerTrade', { accepted: a }); document.
 // 5. 描画 (Canvas)
 // ==========================================
 function render() {
-    if (!gameState || !gameState.board || !gameState.board.hexes) return;
+    if(!gameState || !gameState.board || !gameState.board.hexes) return;
     
     const skin = SKINS[currentSkin];
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -420,6 +385,7 @@ function render() {
         const p = tr(h.x, h.y);
         drawHexBase(p.x, p.y, s, RESOURCE_INFO[h.resource].color);
         
+        // 詳細描画 (文字・数字)
         if (s > 15) {
             ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.shadowBlur = 3; ctx.shadowColor = 'rgba(0,0,0,0.6)';
@@ -431,13 +397,25 @@ function render() {
             ctx.fillText(RESOURCE_INFO[h.resource].label, p.x, p.y + s*0.3);
             
             ctx.shadowBlur = 0;
-            // 数字トークン (nullチェック)
-            if (h.resource !== 'desert' && h.number !== null) {
+            
+            // ★数字表示制御
+            // 設定でhideNumbersがTrue かつ SETUPフェーズなら隠す
+            let showNum = true;
+            if (gameState.settings && gameState.settings.hideNumbers && gameState.phase === 'SETUP') {
+                showNum = false;
+            }
+
+            if (showNum && h.resource !== 'desert' && h.number !== null) {
                 drawNumberToken(p.x, p.y, h.number, s);
+            } else if (!showNum && h.resource !== 'desert') {
+                // 隠れている場合は「？」
+                drawHiddenToken(p.x, p.y, s);
             }
         }
         
         if (gameState.robberHexId === h.id) drawRobber(p.x, p.y, s);
+        
+        // 盗賊移動ハイライト
         if (gameState.phase === 'ROBBER' && gameState.players[gameState.turnIndex].id === myId) {
             ctx.strokeStyle = 'red'; ctx.lineWidth = 3; ctx.stroke();
         }
@@ -484,6 +462,7 @@ function render() {
             if (v.type === 'city') drawCity(p.x, p.y, v.owner, s);
             else drawSettlement(p.x, p.y, v.owner, s);
         } else {
+            // 空の交差点（建設可能ならハイライトしたいが、シンプルに丸表示）
             ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(p.x, p.y, s*0.1, 0, Math.PI*2); ctx.fill();
         }
     });
@@ -502,6 +481,11 @@ function drawNumberToken(x, y, n, s) {
     const dots = (n===2||n===12)?1:(n===3||n===11)?2:(n===4||n===10)?3:(n===5||n===9)?4:5;
     ctx.font = `${s*0.1}px Arial`; ctx.fillText('.'.repeat(dots), x, y+s*0.15);
 }
+function drawHiddenToken(x, y, s) {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(x, y, s*0.3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'white'; ctx.font = `bold ${s*0.25}px Arial`; 
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText("?", x, y);
+}
 function drawRobber(x, y, s) {
     ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(x, y, s*0.2, 0, Math.PI*2); ctx.fill();
 }
@@ -510,7 +494,7 @@ function drawRoad(x1, y1, x2, y2, c, s) {
     ctx.strokeStyle='black'; ctx.lineWidth=s*0.15; ctx.stroke(); ctx.strokeStyle=c; ctx.lineWidth=s*0.1; ctx.stroke();
 }
 function drawSettlement(x, y, c, s) {
-    const w=s*0.15; ctx.beginPath(); ctx.rect(x-w, y-w, w*2, w*2); ctx.fillStyle=c; ctx.fill(); ctx.stroke();
+    const w=s*0.15; ctx.beginPath(); ctx.rect(x-w, y-w, w*2, w*2); ctx.fillStyle=c; ctx.fill(); ctx.strokeStyle='black'; ctx.lineWidth=1; ctx.stroke();
 }
 function drawCity(x, y, c, s) {
     const w=s*0.2; ctx.beginPath(); ctx.arc(x, y, w, 0, Math.PI*2); ctx.fillStyle=c; ctx.fill(); ctx.strokeStyle='gold'; ctx.lineWidth=2; ctx.stroke();
@@ -521,44 +505,22 @@ function updateUI() {
     const isMobile = window.innerWidth < 600;
     const myPlayer = gameState.players.find(p => p.id === myId);
     
-    // Trade options
     const sel = document.getElementById('trade-target');
     if (sel && sel.options.length <= 2) {
-        const val = sel.value; 
-        sel.innerHTML = '<option value="bank">銀行</option><option value="bot">Bot</option>';
-        gameState.players.forEach(pl => { 
-            if (pl.id !== myId && !pl.isBot) {
-                const o = document.createElement('option'); o.value = pl.id; o.innerText = pl.name; sel.appendChild(o);
-            }
-        });
+        const val = sel.value; sel.innerHTML='<option value="bank">銀行</option><option value="bot">Bot</option>';
+        gameState.players.forEach(pl=>{ if(pl.id!==myId && !pl.isBot){ const o=document.createElement('option'); o.value=pl.id; o.innerText=pl.name; sel.appendChild(o); } });
         sel.value = val;
     }
     const t = document.getElementById(isMobile?'timer-display':'pc-timer'); 
     if (t) t.innerText = gameState.timer;
 
-    // Logs
     const logsHTML = gameState.logs.map(l=>`<div>${l}</div>`).join('');
     const bankHTML = Object.keys(gameState.bank).map(k=>`<div>${RESOURCE_INFO[k].icon} ${gameState.bank[k]}</div>`).join('');
     const myResHTML = myPlayer ? Object.keys(myPlayer.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${myPlayer.resources[k]}</div>`).join('') : "";
     const myCardsHTML = (myPlayer&&myPlayer.cards.length>0) ? myPlayer.cards.map(c=>`<div>${getCardName(c.type)}</div>`).join('') : "なし";
     const scoreHTML = gameState.players.map(p=>`<div style="color:${p.color};font-weight:bold;">${p.name}: ${p.victoryPoints}</div>`).join('');
     
-    let prodHTML = "";
-    if (myPlayer && gameState.board.hexes) {
-        const prod = {};
-        gameState.board.hexes.forEach(h => {
-            if (h.resource!=='desert' && h.id!==gameState.robberHexId) {
-                const adj = gameState.board.vertices.some(v => v.owner === myPlayer.color && Math.abs(Math.hypot(v.x-h.x, v.y-h.y)-1.0)<0.1);
-                if (adj) {
-                    if (!prod[h.number]) prod[h.number] = [];
-                    const ic = RESOURCE_INFO[h.resource].icon;
-                    if (prod[h.number].filter(x => x === ic).length < 2) prod[h.number].push(ic);
-                }
-            }
-        });
-        const nums = Object.keys(prod).sort((a,b)=>a-b);
-        prodHTML = nums.map(n => `<div><strong>${n}:</strong> ${prod[n].join('')}</div>`).join('');
-    }
+    let prodHTML=""; if(myPlayer && gameState.board.hexes){ const prod={}; gameState.board.hexes.forEach(h=>{ if(h.resource!=='desert'&&h.id!==gameState.robberHexId){ const adj=gameState.board.vertices.some(v=>v.owner===myPlayer.color && Math.abs(Math.hypot(v.x-h.x,v.y-h.y)-1.0)<0.1); if(adj){ if(!prod[h.number])prod[h.number]=[]; const ic=RESOURCE_INFO[h.resource].icon; if(prod[h.number].filter(x=>x===ic).length<2)prod[h.number].push(ic); } } }); const nums=Object.keys(prod).sort((a,b)=>a-b); prodHTML=nums.map(n=>`<div><strong>${n}:</strong> ${prod[n].join('')}</div>`).join(''); }
 
     if(isMobile) {
         document.getElementById('mobile-log-area').innerHTML = logsHTML;
@@ -567,11 +529,10 @@ function updateUI() {
         document.getElementById('mobile-my-cards').innerHTML = myCardsHTML;
         document.getElementById('mobile-prod-list').innerHTML = prodHTML;
         document.getElementById('mobile-score-board').innerHTML = scoreHTML;
-        
         document.getElementById('mini-res').innerText = myPlayer ? `🎒 木${myPlayer.resources.forest} 土${myPlayer.resources.hill} 鉄${myPlayer.resources.mountain} 麦${myPlayer.resources.field} 羊${myPlayer.resources.pasture}` : "";
         document.getElementById('mini-score').innerText = myPlayer ? `🏆 ${myPlayer.victoryPoints}点` : "";
         const cur = gameState.players[gameState.turnIndex];
-        document.getElementById('mobile-game-info').innerHTML = cur ? `手番: <span style="color:${cur.color}">${cur.name}</span> (${gameState.phase})` : "";
+        document.getElementById('mobile-game-info').innerHTML = cur ? `手番: <span style="color:${cur.color}">${cur.name}</span>` : "";
     } else {
         const l = document.getElementById('pc-log-area'); if(l){l.innerHTML=logsHTML; l.scrollTop=l.scrollHeight;}
         document.getElementById('pc-bank-res').innerHTML = bankHTML;
@@ -580,10 +541,10 @@ function updateUI() {
         document.getElementById('pc-prod-list').innerHTML = prodHTML;
         document.getElementById('pc-score-board').innerHTML = scoreHTML;
         const cur = gameState.players[gameState.turnIndex];
-        document.getElementById('pc-game-info').innerHTML = cur ? `手番: <span style="color:${cur.color}">${cur.name}</span> (${gameState.phase})` : "";
+        document.getElementById('pc-game-info').innerHTML = cur ? `手番: <span style="color:${cur.color}">${cur.name}</span>` : "";
     }
 
-    // Controls Visibility
+    // 操作パネルの表示制御
     const cur = gameState.players[gameState.turnIndex];
     if(!cur) return;
     const controls = document.getElementById('main-controls');
@@ -597,13 +558,13 @@ function updateUI() {
         msgEl.innerText = !gameState.diceResult ? "サイコロを振ってください" : "行動可能です";
     } else if(gameState.phase==='ROBBER' && cur.id===myId) {
         controls.style.display = 'none';
-        msgEl.innerText = "【重要】盗賊を移動させてください";
+        msgEl.innerText = "【重要】盗賊を移動させるタイルをクリックしてください";
     } else if(gameState.phase==='BURST' && gameState.burstPlayers.includes(myId)) {
         controls.style.display = 'none';
         msgEl.innerText = "資源を捨ててください";
     } else if(gameState.phase==='SETUP' && cur.id===myId) {
         controls.style.display = 'none';
-        msgEl.innerText = (gameState.subPhase==='SETTLEMENT') ? "初期配置: 開拓地を置いてください" : "初期配置: 道を置いてください";
+        msgEl.innerText = (gameState.subPhase==='SETTLEMENT') ? "【初期配置】開拓地を置いてください" : "【初期配置】道を置いてください";
     } else {
         controls.style.display = 'none';
         msgEl.innerText = `待機中 (${cur.name}の手番)`;
@@ -616,64 +577,71 @@ function updateUI() {
 canvas.addEventListener('mousedown', e=>{isDragging=true; lastPointer={x:e.clientX, y:e.clientY};});
 canvas.addEventListener('mousemove', e=>{if(isDragging){camera.x+=e.clientX-lastPointer.x; camera.y+=e.clientY-lastPointer.y; lastPointer={x:e.clientX, y:e.clientY}; render();}});
 canvas.addEventListener('mouseup', ()=>isDragging=false);
+canvas.addEventListener('mouseleave', ()=>isDragging=false);
 canvas.addEventListener('wheel', e=>{e.preventDefault(); const nz=camera.zoom-e.deltaY*0.001; camera.zoom=Math.min(Math.max(nz,0.5),3.0); render();}, {passive:false});
 canvas.addEventListener('touchstart', e=>{if(e.touches.length===1){isDragging=true; lastPointer={x:e.touches[0].clientX, y:e.touches[0].clientY};} else if(e.touches.length===2){isDragging=false; const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; lastPinchDist=Math.sqrt(dx*dx+dy*dy);}}, {passive:false});
 canvas.addEventListener('touchmove', e=>{e.preventDefault(); if(e.touches.length===1 && isDragging){camera.x+=e.touches[0].clientX-lastPointer.x; camera.y+=e.touches[0].clientY-lastPointer.y; lastPointer={x:e.touches[0].clientX, y:e.touches[0].clientY}; render();} else if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; const d=Math.sqrt(dx*dx+dy*dy); camera.zoom=Math.min(Math.max(camera.zoom+(d-lastPinchDist)*0.005,0.5),3.0); lastPinchDist=d; render();}}, {passive:false});
 canvas.addEventListener('touchend', ()=>isDragging=false);
 
-// ★クリック判定 (座標変換強化)
+// ★クリック判定 (座標変換強化 & 自動選択)
 canvas.addEventListener('click', e => {
     if(!gameState || isDragging) return;
     const cur = gameState.players[gameState.turnIndex];
     if(cur.id !== myId) return;
     
-    // クリック位置
     const rect = canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
-    // 描画ヘルパーと同じ変換
     const tr = (wx, wy) => ({
         x: wx * HEX_SIZE * camera.zoom + camera.x,
         y: wy * HEX_SIZE * camera.zoom + camera.y
     });
 
-    // 1. 盗賊移動 (タイル)
+    // 1. 盗賊
     if(gameState.phase === 'ROBBER') {
         let tH=null, minD=9999;
-        const hexRadius = HEX_SIZE * camera.zoom; // 見た目の半径
+        const hr = HEX_SIZE * camera.zoom;
         gameState.board.hexes.forEach(h => {
             const p = tr(h.x, h.y);
             const dist = Math.hypot(p.x - clickX, p.y - clickY);
-            if(dist < hexRadius && dist < minD) { minD=dist; tH=h; }
+            if(dist < hr && dist < minD) { minD=dist; tH=h; }
         });
         if(tH) socket.emit('moveRobber', tH.id);
         return;
     }
 
-    // 2. 建設 (開拓地・都市・道)
+    // 2. 建設 (SETUP or MAIN)
     if(gameState.phase==='SETUP' || (gameState.phase==='MAIN' && gameState.diceResult)) {
-        if(gameState.phase==='MAIN' && !buildMode) return;
+        
+        // SETUP中は自動でモード判定
+        let mode = buildMode;
+        if (gameState.phase === 'SETUP') {
+            mode = (gameState.subPhase === 'SETTLEMENT') ? 'settlement' : 'road';
+        }
+        
+        if (gameState.phase === 'MAIN' && !mode) return;
 
-        // 頂点判定 (40px以内)
-        if(gameState.phase==='SETUP' || buildMode==='settlement' || buildMode==='city') {
-            let tV=null, minD=40; 
+        // 頂点判定 (開拓地・都市)
+        if(mode==='settlement' || mode==='city') {
+            let tV=null, minD=50; // ヒット範囲広めに(50px)
             gameState.board.vertices.forEach(v => {
                 const p = tr(v.x, v.y);
                 const dist = Math.hypot(p.x - clickX, p.y - clickY);
                 if(dist < minD) { minD=dist; tV=v; }
             });
             if(tV) {
-                if(buildMode==='city') socket.emit('buildCity', tV.id);
+                if(mode==='city') socket.emit('buildCity', tV.id);
                 else socket.emit('buildSettlement', tV.id);
+                
                 if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); }
                 return;
             }
         }
 
-        // 辺判定 (40px以内)
-        if(gameState.phase==='SETUP' || buildMode==='road') {
-            let tE=null, minD=40;
+        // 辺判定 (道)
+        if(mode==='road') {
+            let tE=null, minD=50;
             gameState.board.edges.forEach(e => {
                 const v1 = gameState.board.vertices.find(v=>v.id===e.v1);
                 const v2 = gameState.board.vertices.find(v=>v.id===e.v2);
