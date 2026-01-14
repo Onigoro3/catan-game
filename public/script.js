@@ -68,7 +68,6 @@ function joinGame() {
     document.getElementById('start-overlay').style.display='flex';
 }
 
-// ★修正: サーバーに開始命令を送るだけにする
 function startGame() {
     if(!socket) return;
     socket.emit('startGame');
@@ -76,9 +75,7 @@ function startGame() {
     if(btn) { btn.innerText="開始中..."; btn.disabled=true; }
 }
 
-// ... (以下、UIや描画ロジックは前回と同じですが省略せず記述します) ...
-// 前回の script.js の createBoardData 以外の部分（UI helpers, Camera, Renderなど）をそのまま使ってください。
-// 以下に改めて完全版を載せます
+// createBoardData はサーバーに移動したのでクライアントからは削除
 
 if(socket) {
     socket.on('connect', () => { myId=socket.id; const s=document.getElementById('connection-status'); if(s){s.innerText="🟢 接続OK";s.style.color="green";} document.getElementById('join-btn').disabled=false; });
@@ -93,24 +90,17 @@ if(socket) {
     socket.on('updateState', s => {
         gameState=s;
         if(!gameState.roomId && document.getElementById('join-roomname').value) gameState.roomId=document.getElementById('join-roomname').value;
-        // 待機画面制御
         if(s.phase==='SETUP' && s.setupStep===0 && s.turnIndex===0 && s.players.length<s.totalMaxPlayers){
-            // 開始前だが、startGameボタンはサーバー側ロジック変更により「いつでも開始可能」
-            // 既に自分が参加済みの場合は待機画面
             document.getElementById('login-screen').style.display='none';
             document.getElementById('start-overlay').style.display='flex';
             const btn=document.getElementById('start-btn-big');
-            // 人数が足りなくても強制開始できる
-            btn.innerText = `ゲーム開始 (${s.players.length}人)`;
-            btn.disabled = false;
+            btn.innerText=`ゲーム開始 (${s.players.length}人)`;
+            btn.disabled=false; 
         } else {
-            // ゲーム中
             document.getElementById('login-screen').style.display='none';
             document.getElementById('start-overlay').style.display='none';
             document.getElementById('controls').style.display='block';
         }
-        
-        // バースト
         const me=s.players.find(p=>p.id===myId);
         if(me && s.phase==='BURST' && s.burstPlayers.includes(myId) && document.getElementById('burst-overlay').style.display==='none'){
             burstTargetCount=Math.floor(Object.values(me.resources).reduce((a,b)=>a+b,0)/2);
@@ -121,7 +111,6 @@ if(socket) {
         if(s.phase==='GAME_OVER') { document.getElementById('winner-name').innerText=s.winner.name; document.getElementById('winner-overlay').style.display='flex'; }
         render(); updateUI();
     });
-    // ... (前回と同じイベントリスナー)
     socket.on('tradeRequested', d => { document.getElementById('req-sender').innerText=d.senderName; document.getElementById('req-give').innerText=RESOURCE_INFO[d.give].icon; document.getElementById('req-receive').innerText=RESOURCE_INFO[d.receive].icon; document.getElementById('trade-req-overlay').style.display='flex'; });
     socket.on('chatUpdate', d => { const b=document.getElementById('chat-messages'),p=document.createElement('div'); p.style.fontSize='11px'; p.innerHTML=`<span style="color:${d.color}">${d.name}</span>:${d.msg}`; b.appendChild(p); b.scrollTop=b.scrollHeight; });
     socket.on('playSound', t => playSystemSound(t));
@@ -129,7 +118,7 @@ if(socket) {
     socket.on('error', m => alert(m));
 }
 
-// UI Helpers
+// UI Helpers (前回と同じ)
 function playDiceAnim(){const ov=document.getElementById('dice-anim-overlay');ov.style.display='flex';const d1=document.getElementById('die1'),d2=document.getElementById('die2');let c=0;const t=setInterval(()=>{d1.innerText=Math.floor(Math.random()*6)+1;d2.innerText=Math.floor(Math.random()*6)+1;c++;if(c>8){clearInterval(t);ov.style.display='none';socket.emit('rollDice');}},100);}
 function endTurn(){buildMode=null;updateBuildMsg();socket.emit('endTurn');}
 function sendTrade(){const t=document.getElementById('trade-target').value,g=document.getElementById('trade-give').value,r=document.getElementById('trade-receive').value;if(g===r)return alert('同じ資源');if(t==='bank'||t==='bot')socket.emit('trade',{target:t,give:g,receive:r});else socket.emit('offerTrade',{targetId:t,give:g,receive:r});}
@@ -169,7 +158,7 @@ function render(){
     hexes.forEach(h=>{
         const p=tr(h.x,h.y); drawHexBase(p.x,p.y,s,RESOURCE_INFO[h.resource].color);
         if(s>15){
-            ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.fillStyle='white'; ctx.textAlign='center'; ctx.textBaseline='middle';
             ctx.font=`${s*0.5}px Arial`; ctx.fillText(RESOURCE_INFO[h.resource].icon,p.x,p.y-s*0.3);
             ctx.font=`bold ${s*0.25}px Arial`; ctx.fillText(RESOURCE_INFO[h.resource].label,p.x,p.y+s*0.3);
             if(h.number!==null && h.number!==0) drawNumberToken(p.x,p.y,h.number,s);
@@ -177,8 +166,7 @@ function render(){
         if(gameState.robberHexId===h.id)drawRobber(p.x,p.y,s);
         if(gameState.phase==='ROBBER'&&gameState.players[gameState.turnIndex].id===myId){ctx.strokeStyle='red';ctx.lineWidth=3;ctx.stroke();}
     });
-    // 港
-    if(ports) ports.forEach(p=>{
+    if(ports)ports.forEach(p=>{
         const v1=vertices.find(v=>v.id===p.v1),v2=vertices.find(v=>v.id===p.v2);
         if(v1&&v2){
             const pp=tr(p.x,p.y),p1=tr(v1.x,v1.y),p2=tr(v2.x,v2.y);
@@ -186,63 +174,41 @@ function render(){
             if(s>10){ctx.fillStyle='white';ctx.beginPath();ctx.arc(pp.x,pp.y,s*0.25,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='black';ctx.font=`${s*0.15}px Arial`; if(p.type==='any') ctx.fillText('3:1',pp.x,pp.y); else { ctx.fillText(RESOURCE_INFO[p.type].icon,pp.x,pp.y-s*0.08); ctx.fillText('2:1',pp.x,pp.y+s*0.1); }}
         }
     });
-    // 道
     edges.forEach(e=>{
         const v1=vertices.find(v=>v.id===e.v1),v2=vertices.find(v=>v.id===e.v2);
         if(v1&&v2){ const p1=tr(v1.x,v1.y),p2=tr(v2.x,v2.y); if(e.owner)drawRoad(p1.x,p1.y,p2.x,p2.y,e.owner,s); else{ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=s*0.08;ctx.stroke();} }
     });
-    // 建物
     vertices.forEach(v=>{ const p=tr(v.x,v.y); if(v.owner){if(v.type==='city')drawCity(p.x,p.y,v.owner,s);else drawSettlement(p.x,p.y,v.owner,s);}else{ctx.fillStyle='rgba(255,255,255,0.5)';ctx.beginPath();ctx.arc(p.x,p.y,s*0.1,0,Math.PI*2);ctx.fill();} });
 }
-// 描画パーツ
 function drawHexBase(x,y,s,c){ctx.beginPath();for(let i=0;i<6;i++){const r=Math.PI/180*(60*i-30);ctx.lineTo(x+s*Math.cos(r),y+s*Math.sin(r));}ctx.closePath();ctx.fillStyle=c;ctx.fill();ctx.strokeStyle='#654321';ctx.lineWidth=s*0.04;ctx.stroke();}
-function drawNumberToken(x,y,n,s){if(!n)return;ctx.fillStyle='rgba(255,255,255,0.9)';ctx.beginPath();ctx.arc(x,y,s*0.3,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=(n===6||n===8)?'#D32F2F':'black';ctx.font=`bold ${s*0.25}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(n,x,y);}
+function drawNumberToken(x,y,n,s){if(n===null)return;ctx.fillStyle='rgba(255,255,255,0.9)';ctx.beginPath();ctx.arc(x,y,s*0.3,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=(n===6||n===8)?'#D32F2F':'black';ctx.font=`bold ${s*0.25}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(n,x,y);}
 function drawRobber(x,y,s){ctx.fillStyle='rgba(0,0,0,0.6)';ctx.beginPath();ctx.arc(x,y,s*0.2,0,Math.PI*2);ctx.fill();}
 function drawRoad(x1,y1,x2,y2,c,s){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle='black';ctx.lineWidth=s*0.15;ctx.stroke();ctx.strokeStyle=c;ctx.lineWidth=s*0.1;ctx.stroke();}
 function drawSettlement(x,y,c,s){const w=s*0.15;ctx.beginPath();ctx.rect(x-w,y-w,w*2,w*2);ctx.fillStyle=c;ctx.fill();ctx.stroke();}
 function drawCity(x,y,c,s){const w=s*0.2;ctx.beginPath();ctx.arc(x,y,w,0,Math.PI*2);ctx.fillStyle=c;ctx.fill();ctx.strokeStyle='gold';ctx.lineWidth=2;ctx.stroke();}
 
-// Update UI
 function updateUI() {
-    const isMobile = window.innerWidth < 600;
-    const myPlayer = gameState.players.find(p=>p.id===myId);
-    
-    // トレードプルダウン
-    const sel = document.getElementById('trade-target');
-    if(sel.options.length <= 2) { 
-        gameState.players.forEach(pl => { 
-            if(pl.id!==myId&&!pl.isBot){ const opt=document.createElement('option'); opt.value=pl.id; opt.innerText=pl.name; sel.appendChild(opt); } 
-        });
-    }
-    const t=document.getElementById(isMobile?'timer-display':'pc-timer'); if(t) t.innerText=gameState.timer;
+    const isMobile=window.innerWidth<600; const p=gameState.players.find(pl=>pl.id===myId);
+    const sel=document.getElementById('trade-target');
+    if(sel.options.length<=2){ gameState.players.forEach(pl=>{ if(pl.id!==myId&&!pl.isBot){ const opt=document.createElement('option'); opt.value=pl.id; opt.innerText=pl.name; sel.appendChild(opt); } }); }
+    const t=document.getElementById(isMobile?'timer-display':'pc-timer'); if(t)t.innerText=gameState.timer;
     
     const logsHTML=gameState.logs.map(l=>`<div>${l}</div>`).join('');
     const bankHTML=Object.keys(gameState.bank).map(k=>`<div>${RESOURCE_INFO[k].icon} ${gameState.bank[k]}</div>`).join('');
-    const myResHTML=myPlayer?Object.keys(myPlayer.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${myPlayer.resources[k]}</div>`).join(''):"";
-    const myCardsHTML=(myPlayer&&myPlayer.cards.length>0)?myPlayer.cards.map(c=>`<div>${getCardName(c.type)}</div>`).join(''):"なし";
+    const myResHTML=p?Object.keys(p.resources).map(k=>`<div>${RESOURCE_INFO[k].icon} ${p.resources[k]}</div>`).join(''):"";
+    const myCardsHTML=(p&&p.cards.length>0)?p.cards.map(c=>`<div>${getCardName(c.type)}</div>`).join(''):"なし";
     const scoreHTML=gameState.players.map(p=>`<div style="color:${p.color};font-weight:bold;">${p.name}: ${p.victoryPoints}</div>`).join('');
-    
-    let prodHTML = "";
-    if (myPlayer && gameState.board.hexes) {
-        const prod = {};
-        gameState.board.hexes.forEach(h => {
-            if (h.resource==='desert' || h.id===gameState.robberHexId) return;
-            const isAdj = gameState.board.vertices.some(v => v.owner === myPlayer.color && Math.abs(Math.hypot(v.x - h.x, v.y - h.y) - 1.0) < 0.1);
-            if (isAdj) { if (!prod[h.number]) prod[h.number] = []; const icon = RESOURCE_INFO[h.resource].icon; if(prod[h.number].filter(x => x === icon).length < 2) prod[h.number].push(icon); }
-        });
-        const nums = Object.keys(prod).sort((a,b)=>a-b);
-        prodHTML = nums.map(n => `<div><strong>${n}:</strong> ${prod[n].join('')}</div>`).join('');
-    }
+    let prodHTML=""; if(p&&gameState.board.hexes){ const prod={}; gameState.board.hexes.forEach(h=>{ if(h.resource==='desert'||h.id===gameState.robberHexId)return; const isAdj=gameState.board.vertices.some(v=>v.owner===p.color&&Math.abs(Math.hypot(v.x-h.x,v.y-h.y)-1.0)<0.1); if(isAdj){if(!prod[h.number])prod[h.number]=[];const ic=RESOURCE_INFO[h.resource].icon;if(prod[h.number].filter(x=>x===ic).length<2)prod[h.number].push(ic);} }); const nums=Object.keys(prod).sort((a,b)=>a-b); prodHTML=nums.map(n=>`<div><strong>${n}:</strong> ${prod[n].join('')}</div>`).join(''); }
 
-    if(isMobile) {
+    if(isMobile){
         document.getElementById('mobile-log-area').innerHTML=logsHTML;
         document.getElementById('mobile-bank-res').innerHTML=bankHTML;
         document.getElementById('mobile-my-res').innerHTML=myResHTML;
         document.getElementById('mobile-my-cards').innerHTML=myCardsHTML;
         document.getElementById('mobile-prod-list').innerHTML=prodHTML;
         document.getElementById('mobile-score-board').innerHTML=scoreHTML;
-        document.getElementById('mini-res').innerText = myPlayer ? `🎒 木${myPlayer.resources.forest} 土${myPlayer.resources.hill} 鉄${myPlayer.resources.mountain} 麦${myPlayer.resources.field} 羊${myPlayer.resources.pasture}`:"";
-        document.getElementById('mini-score').innerText = myPlayer ? `🏆 ${myPlayer.victoryPoints}点`:"";
+        document.getElementById('mini-res').innerText = p ? `🎒 木${p.resources.forest} 土${p.resources.hill} 鉄${p.resources.mountain} 麦${p.resources.field} 羊${p.resources.pasture}`:"";
+        document.getElementById('mini-score').innerText = p ? `🏆 ${p.victoryPoints}点`:"";
         document.getElementById('mobile-game-info').innerHTML = `手番: <span style="color:${gameState.players[gameState.turnIndex].color}">${gameState.players[gameState.turnIndex].name}</span> (${gameState.phase})`;
     } else {
         const l=document.getElementById('pc-log-area'); l.innerHTML=logsHTML; l.scrollTop=l.scrollHeight;
@@ -272,7 +238,7 @@ function updateUI() {
     }
 }
 
-// クリック判定
+// Click Event
 canvas.addEventListener('click', e => {
     if(!gameState || isDragging) return;
     const cur = gameState.players[gameState.turnIndex];

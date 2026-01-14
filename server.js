@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS = {
     mapType: 'standard', mapSize: 'normal', victoryPoints: 10, burstEnabled: true
 };
 
-// --- マップ生成ロジック (サーバー側で実行) ---
+// ★マップ生成ロジック (サーバー実装)
 function createBoardData(mapSize, mapType) {
     const hexes=[],vertices=[],edges=[],ports=[]; let id=0;
     
@@ -33,9 +33,11 @@ function createBoardData(mapSize, mapType) {
         }
         qrs.forEach(str => { const [q,r]=str.split(',').map(Number); const x=Math.sqrt(3)*(q+r/2.0), y=3/2*r; hexes.push({id:id++,q,r,x,y,resource:null,number:0}); });
     } else {
-        let mapDef;
-        if (mapSize === 'extended') mapDef=[{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}];
-        else mapDef=[{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
+        // 定型マップ (3-4-5-4-3)
+        const mapDef = mapSize === 'extended' 
+            ? [{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}]
+            : [{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
+        
         mapDef.forEach(row=>{for(let i=0;i<row.count;i++){ const q=row.qStart+i,r=row.r; const x=Math.sqrt(3)*(q+r/2.0),y=3/2*r; hexes.push({id:id++,q,r,x,y,resource:null,number:0}); }});
     }
 
@@ -68,7 +70,6 @@ function createBoardData(mapSize, mapType) {
     for(let i=0;i<outer.length&&pi<pts.length;i+=3){
         if(i+1<outer.length){
             const v1=outer[i], v2=outer[i+1];
-            // 辺でつながっているか確認
             if(edges.some(e=>(e.v1===v1.id&&e.v2===v2.id)||(e.v1===v2.id&&e.v2===v1.id))){
                 const mx=(v1.x+v2.x)/2, my=(v1.y+v2.y)/2;
                 const ang=Math.atan2(my-cy,mx-cx);
@@ -110,8 +111,7 @@ function getRoomId(socket) {
 }
 
 function startTimer(rid) {
-    const game = rooms[rid];
-    if (!game) return;
+    const game = rooms[rid]; if (!game) return;
     if (game.timerId) clearInterval(game.timerId);
     game.timer = 90;
     game.timerId = setInterval(() => {
@@ -128,112 +128,76 @@ function startTimer(rid) {
 io.on('connection', (socket) => {
     socket.on('createRoom', ({ name, roomName, settings }) => {
         const roomId = roomName || 'default';
-        if (rooms[roomId]) { socket.emit('error', 'その部屋名は既に使用されています'); return; }
-        
+        if (rooms[roomId]) { socket.emit('error', '部屋名重複'); return; }
         settings.humanLimit = parseInt(settings.humanLimit);
         settings.botCount = parseInt(settings.botCount);
-        
         initGame(roomId, settings);
         joinRoomProcess(socket, roomId, name);
     });
 
     socket.on('joinGame', ({ name, roomName }) => {
         const roomId = roomName || 'default';
-        if (!rooms[roomId]) { socket.emit('error', '部屋が見つかりません'); return; }
+        if (!rooms[roomId]) { socket.emit('error', '部屋なし'); return; }
         joinRoomProcess(socket, roomId, name);
     });
 
     function joinRoomProcess(socket, roomId, playerName) {
         const game = rooms[roomId];
         socket.join(roomId);
-
         const existing = game.players.find(p => p.id === socket.id);
-        if (existing) {
-            existing.name = playerName || existing.name;
-            io.to(roomId).emit('updateState', game);
-            return;
-        }
-
-        const currentHumans = game.players.filter(p => !p.isBot).length;
-        if (currentHumans >= game.settings.humanLimit) {
-            game.spectators.push(socket.id);
-            socket.emit('message', '満員のため観戦モードで参加します');
-            socket.emit('updateState', game);
-            return;
-        }
-
+        if (existing) { existing.name = playerName || existing.name; io.to(roomId).emit('updateState', game); return; }
+        if (game.players.filter(p=>!p.isBot).length >= game.settings.humanLimit) { game.spectators.push(socket.id); socket.emit('message', '観戦'); socket.emit('updateState', game); return; }
         const colors = ['red', 'blue', 'orange', 'white', 'green', 'brown'];
-        const color = colors.find(c => !game.players.map(p => p.color).includes(c)) || 'black';
-
-        const player = {
-            id: socket.id,
-            name: playerName || `Player ${game.players.length+1}`,
-            color: color,
-            isBot: false,
-            resources: { forest: 0, hill: 0, mountain: 0, field: 0, pasture: 0 },
-            cards: [], victoryPoints: 0, roadLength: 0, armySize: 0, achievements: []
-        };
-        game.players.push(player);
-        game.stats.resourceCollected[player.id] = 0;
-        
-        addLog(roomId, `${player.name} が参加しました`);
+        const color = colors.find(c => !game.players.map(p=>p.color).includes(c)) || 'black';
+        const player = { id: socket.id, name: playerName||`Player${game.players.length+1}`, color, isBot: false, resources: {forest:0,hill:0,mountain:0,field:0,pasture:0}, cards:[], victoryPoints:0, roadLength:0, armySize:0, achievements:[] };
+        game.players.push(player); game.stats.resourceCollected[player.id]=0;
+        addLog(roomId, `${player.name} 参加`);
         io.to(roomId).emit('updateState', game);
     }
 
-    // ★ゲーム開始処理 (サーバー側でマップ生成)
+    // ★ゲーム開始処理 (ここでマップ生成)
     socket.on('startGame', () => {
-        const roomId = getRoomId(socket);
-        if (!roomId || !rooms[roomId]) return;
+        const roomId = getRoomId(socket); if (!roomId || !rooms[roomId]) return;
         const game = rooms[roomId];
-
         if (game.phase !== 'SETUP' && game.phase !== 'GAME_OVER') return;
 
-        if (game.players.length > 0) {
-            // ★マップ生成をサーバーで行う
-            game.board = createBoardData(game.settings.mapSize, game.settings.mapType);
-            
-            const desert = game.board.hexes.find(h => h.resource === 'desert');
-            if (desert) game.robberHexId = desert.id;
-            game.hiddenNumbers = game.board.hexes.map(h => h.number);
-            game.board.hexes.forEach(h => { if (h.resource !== 'desert') h.number = null; });
+        // ★ここでマップ生成を実行
+        game.board = createBoardData(game.settings.mapSize, game.settings.mapType);
+        
+        const desert = game.board.hexes.find(h => h.resource === 'desert');
+        if (desert) game.robberHexId = desert.id;
+        game.hiddenNumbers = game.board.hexes.map(h => h.number);
+        game.board.hexes.forEach(h => { if (h.resource !== 'desert') h.number = null; });
 
-            // Bot補充 (最低2人になるように調整)
-            const minPlayers = 2;
-            // 現在のBot数
-            const currentBots = game.players.filter(p=>p.isBot).length;
-            // 設定されたBot数 - 現在のBot数 (再スタート時など考慮)
-            let botsNeeded = game.settings.botCount - currentBots;
-            // 全体人数が2人未満なら追加
-            if (game.players.length + botsNeeded < minPlayers) {
-                botsNeeded += (minPlayers - (game.players.length + botsNeeded));
-            }
+        // Bot補充 (最低2人になるように)
+        const minPlayers = 2;
+        const currentBots = game.players.filter(p=>p.isBot).length;
+        let botsNeeded = game.settings.botCount - currentBots;
+        if (game.players.length + botsNeeded < minPlayers) botsNeeded += (minPlayers - (game.players.length + botsNeeded));
 
-            const colors = ['red', 'blue', 'orange', 'white', 'green', 'brown'];
-            for(let i=0; i<botsNeeded; i++) {
-                const botColor = colors.find(c => !game.players.map(p=>p.color).includes(c)) || 'gray';
-                const botId = `bot-${roomId}-${game.players.length}`;
-                game.players.push({
-                    id: botId, name: `Bot ${i+1}`, color: botColor, isBot: true,
-                    resources: {forest:0,hill:0,mountain:0,field:0,pasture:0}, cards:[], victoryPoints:0, roadLength:0, armySize:0, achievements:[]
-                });
-                game.stats.resourceCollected[botId] = 0;
-            }
-
-            let order = [];
-            for(let i=0; i<game.players.length; i++) order.push(i);
-            game.setupTurnOrder = [...order, ...[...order].reverse()];
-            game.turnIndex = game.setupTurnOrder[0];
-            game.phase = 'SETUP';
-            game.subPhase = 'SETTLEMENT';
-
-            addLog(roomId, `ゲーム開始！ (${game.players.length}人)`);
-            io.to(roomId).emit('gameStarted', game);
-            io.to(roomId).emit('playSound', 'start');
-            startTimer(roomId);
-            setTimeout(() => checkBotTurn(roomId), 1000);
+        const colors = ['red', 'blue', 'orange', 'white', 'green', 'brown'];
+        for(let i=0; i<botsNeeded; i++) {
+            const botColor = colors.find(c => !game.players.map(p=>p.color).includes(c)) || 'gray';
+            const botId = `bot-${roomId}-${game.players.length}`;
+            game.players.push({ id: botId, name: `Bot ${i+1}`, color: botColor, isBot: true, resources: {forest:0,hill:0,mountain:0,field:0,pasture:0}, cards:[], victoryPoints:0, roadLength:0, armySize:0, achievements:[] });
+            game.stats.resourceCollected[botId] = 0;
         }
+
+        let order = [];
+        for(let i=0; i<game.players.length; i++) order.push(i);
+        game.setupTurnOrder = [...order, ...[...order].reverse()];
+        game.turnIndex = game.setupTurnOrder[0];
+        game.phase = 'SETUP';
+        game.subPhase = 'SETTLEMENT'; // ★初期フェーズ明示
+
+        addLog(roomId, `開始 (${game.players.length}人)`);
+        io.to(roomId).emit('gameStarted', game); // ★クライアントへ送信
+        io.to(roomId).emit('playSound', 'start');
+        startTimer(roomId);
+        setTimeout(() => checkBotTurn(roomId), 1000);
     });
 
+    // ... (チャット、アクション系は変更なし) ...
     const wrap = (fn) => (data) => { const r = getRoomId(socket); if(r && rooms[r]) fn(r, socket.id, data); };
     socket.on('buildSettlement', wrap(handleBuildSettlement));
     socket.on('buildRoad', wrap(handleBuildRoad));
