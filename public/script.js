@@ -3,7 +3,7 @@ try {
     socket = io();
 } catch (e) {
     console.error("Socket Error:", e);
-    alert("通信エラー: リロードしてください");
+    alert("サーバー接続エラー: リロードしてください");
 }
 
 // ==========================================
@@ -32,8 +32,9 @@ let buildMode = null;
 
 // カメラ・操作変数
 let camera = { x: 0, y: 0, zoom: 1.0 };
+// ★修正: PC用フラグ追加
+let isMouseDown = false; 
 let isDragging = false;
-let touchStartTime = 0;
 let touchStartX = 0;
 let touchStartY = 0;
 let lastPointer = { x: 0, y: 0 };
@@ -166,20 +167,17 @@ if (socket) {
             gameState.roomId = document.getElementById('join-roomname').value;
         }
 
-        // 画面切り替え
         const me = state.players.find(p => p.id === myId) || state.spectators.includes(myId);
         if (me) {
             document.getElementById('login-screen').style.display = 'none';
             const hasMap = (state.board && state.board.hexes && state.board.hexes.length > 0);
 
             if (hasMap) {
-                // ゲーム中
                 document.getElementById('start-overlay').style.display = 'none';
                 document.getElementById('controls').style.display = 'block';
                 if (canvas.width !== window.innerWidth) resizeCanvas();
                 render();
             } else {
-                // 待機中
                 document.getElementById('start-overlay').style.display = 'flex';
                 document.getElementById('controls').style.display = 'none';
                 const btn = document.getElementById('start-btn-big');
@@ -190,7 +188,6 @@ if (socket) {
             }
         }
 
-        // バースト
         const myPlayer = state.players.find(p => p.id === myId);
         const burstOverlay = document.getElementById('burst-overlay');
         if (myPlayer && state.phase === 'BURST' && state.burstPlayers.includes(myId)) {
@@ -204,10 +201,10 @@ if (socket) {
             burstOverlay.style.display = 'none';
         }
 
-        // 終了
         if (state.phase === 'GAME_OVER') {
             document.getElementById('winner-name').innerText = state.winner.name;
             let h = "<h3>結果詳細</h3>";
+            h += "<div>🎲 出目履歴:<br>" + state.stats.diceHistory.map((c,i)=> i>=2?`${i}:${c}回`:'').join(' ') + "</div>";
             h += "<div>💰 獲得資源:<br>" + Object.keys(state.stats.resourceCollected).map(pid=>{
                 const p=state.players.find(pl=>pl.id===pid); return p?`${p.name}:${state.stats.resourceCollected[pid]}`:"";
             }).join('<br>') + "</div>";
@@ -381,7 +378,7 @@ function render() {
     });
     const s = HEX_SIZE * camera.zoom;
 
-    // ヘックス描画
+    // ヘックス
     hexes.forEach(h => {
         const p = tr(h.x, h.y);
         drawHexBase(p.x, p.y, s, RESOURCE_INFO[h.resource].color);
@@ -398,7 +395,6 @@ function render() {
             
             ctx.shadowBlur = 0;
             
-            // 数字表示制御
             let showNum = true;
             if (gameState.settings && gameState.settings.hideNumbers && gameState.phase === 'SETUP') {
                 showNum = false;
@@ -458,10 +454,9 @@ function render() {
             if (v.type === 'city') drawCity(p.x, p.y, v.owner, s);
             else drawSettlement(p.x, p.y, v.owner, s);
         } else {
-            // ★ガイド表示: SETUP中に自分のターンなら、建設可能な場所を光らせる
+            // ガイド表示 (SETUP中のみ)
             if (gameState.phase === 'SETUP' && gameState.players[gameState.turnIndex].id === myId) {
                 if (gameState.subPhase === 'SETTLEMENT') {
-                    // 建物がない場所
                     ctx.fillStyle = 'rgba(255,255,255,0.8)'; 
                     ctx.beginPath(); ctx.arc(p.x, p.y, s*0.15, 0, Math.PI*2); ctx.fill();
                     ctx.strokeStyle = 'red'; ctx.lineWidth = 2; ctx.stroke();
@@ -580,15 +575,18 @@ function updateUI() {
 // 6. 操作 (タップ判定強化版)
 // ==========================================
 
-// --- タップ検出ロジック ---
+// ★マウスボタンの状態監視 (PC用)
 canvas.addEventListener('mousedown', e => {
+    isMouseDown = true;
     isDragging = false;
     touchStartX = e.clientX;
     touchStartY = e.clientY;
     lastPointer = {x:e.clientX, y:e.clientY};
 });
 canvas.addEventListener('mousemove', e => {
-    // 5px以上動いたらドラッグとみなす
+    // ボタンが押されていないならドラッグしない
+    if(!isMouseDown) return;
+
     if(Math.hypot(e.clientX - touchStartX, e.clientY - touchStartY) > 5) {
         isDragging = true;
     }
@@ -600,11 +598,17 @@ canvas.addEventListener('mousemove', e => {
     }
 });
 canvas.addEventListener('mouseup', e => {
+    // ドラッグしていなければクリック
     if(!isDragging) handleClick(e.clientX, e.clientY);
+    isMouseDown = false;
+    isDragging = false;
+});
+canvas.addEventListener('mouseleave', () => {
+    isMouseDown = false;
     isDragging = false;
 });
 
-// スマホ
+// ★スマホ用タッチイベント
 canvas.addEventListener('touchstart', e => {
     if(e.touches.length === 1) {
         isDragging = false;
@@ -612,7 +616,7 @@ canvas.addEventListener('touchstart', e => {
         touchStartY = e.touches[0].clientY;
         lastPointer = {x: touchStartX, y: touchStartY};
     } else if (e.touches.length === 2) {
-        isDragging = true; // ピンチ中はドラッグ扱い
+        isDragging = true; 
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         lastPinchDist = Math.sqrt(dx*dx + dy*dy);
@@ -620,10 +624,11 @@ canvas.addEventListener('touchstart', e => {
 }, {passive:false});
 
 canvas.addEventListener('touchmove', e => {
-    e.preventDefault(); // スクロール防止
+    e.preventDefault(); 
     if(e.touches.length === 1) {
         const cx = e.touches[0].clientX;
         const cy = e.touches[0].clientY;
+        // わずかな動きは許容するが、大きく動けばドラッグ
         if(Math.hypot(cx - touchStartX, cy - touchStartY) > 5) isDragging = true;
         
         if(isDragging) {
@@ -643,12 +648,8 @@ canvas.addEventListener('touchmove', e => {
 }, {passive:false});
 
 canvas.addEventListener('touchend', e => {
-    // 指を離した時、ドラッグしていなければタップとみなす
-    if(!isDragging) {
-        // touchendにはtouchesがないのでchangedTouchesを使う
-        if(e.changedTouches.length > 0) {
-            handleClick(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-        }
+    if(!isDragging && e.changedTouches.length > 0) {
+        handleClick(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
     }
     isDragging = false;
 });
@@ -657,13 +658,12 @@ canvas.addEventListener('touchend', e => {
 function handleClick(clickX, clickY) {
     if(!gameState) return;
     const cur = gameState.players[gameState.turnIndex];
-    if(cur.id !== myId) return; // 自分の番以外は無視
+    if(cur.id !== myId) return;
     
     const rect = canvas.getBoundingClientRect();
     const cx = clickX - rect.left;
     const cy = clickY - rect.top;
     
-    // 描画座標計算ヘルパー
     const tr = (wx, wy) => ({
         x: wx * HEX_SIZE * camera.zoom + camera.x,
         y: wy * HEX_SIZE * camera.zoom + camera.y
@@ -676,14 +676,13 @@ function handleClick(clickX, clickY) {
         gameState.board.hexes.forEach(h => {
             const p = tr(h.x, h.y);
             const dist = Math.hypot(p.x - cx, p.y - cy);
-            // 半径より内側ならヒット
             if(dist < hr && dist < minD) { minD = dist; tH = h; }
         });
         if(tH) socket.emit('moveRobber', tH.id);
         return;
     }
 
-    // 2. 建設 (自動判定モード)
+    // 2. 建設 (自動判定)
     let mode = buildMode;
     if(gameState.phase === 'SETUP') {
         mode = (gameState.subPhase === 'SETTLEMENT') ? 'settlement' : 'road';
@@ -691,9 +690,8 @@ function handleClick(clickX, clickY) {
 
     if (!mode) return;
 
-    // 建設: 開拓地・都市 (頂点)
     if(mode === 'settlement' || mode === 'city') {
-        let tV = null, minD = 60; // 判定範囲広め (60px)
+        let tV = null, minD = 60; // 判定範囲を60pxに拡大
         gameState.board.vertices.forEach(v => {
             const p = tr(v.x, v.y);
             const dist = Math.hypot(p.x - cx, p.y - cy);
@@ -703,12 +701,9 @@ function handleClick(clickX, clickY) {
         if(tV) {
             if(mode === 'city') socket.emit('buildCity', tV.id);
             else socket.emit('buildSettlement', tV.id);
-            
-            // MAINフェーズならモード解除
             if(gameState.phase === 'MAIN') { buildMode = null; updateBuildMsg(); }
         }
     } 
-    // 建設: 道 (辺)
     else if(mode === 'road') {
         let tE = null, minD = 60;
         gameState.board.edges.forEach(e => {

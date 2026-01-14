@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS = {
     hideNumbers: false
 };
 
-// マップ生成 (変更なしだが記述)
+// マップ生成ロジック
 function createBoardData(mapSize, mapType) {
     const hexes=[], vertices=[], edges=[], ports=[]; let id=0;
     
@@ -38,7 +38,7 @@ function createBoardData(mapSize, mapType) {
         mapDef.forEach(row=>{ for(let i=0;i<row.count;i++){ const q=row.qStart+i,r=row.r; const x=Math.sqrt(3)*(q+r/2.0),y=3/2*r; hexes.push({id:id++,q,r,x,y,resource:null,number:null}); } });
     }
 
-    // 2. 資源 (砂漠1つ保証)
+    // 2. 資源
     let resources = mapSize==='extended' ? [...Array(6).fill('forest'),...Array(6).fill('pasture'),...Array(6).fill('field'),...Array(5).fill('hill'),...Array(5).fill('mountain'),...Array(2).fill('desert')] : [...Array(4).fill('forest'),...Array(4).fill('pasture'),...Array(4).fill('field'),...Array(3).fill('hill'),...Array(3).fill('mountain'),...Array(1).fill('desert')];
     while(resources.length < hexes.length) resources.push('desert');
     while(resources.length > hexes.length) resources.pop();
@@ -165,7 +165,6 @@ io.on('connection', (socket) => {
         const desert = game.board.hexes.find(h => h.resource === 'desert');
         if (desert) { game.robberHexId = desert.id; desert.number = null; }
         
-        // 数字隠し
         game.hiddenNumbers = game.board.hexes.map(h => h.number);
         if (game.settings.hideNumbers) {
             game.board.hexes.forEach(h => { if (h.resource !== 'desert') h.number = null; });
@@ -228,22 +227,24 @@ function addLog(rid,msg){ if(rooms[rid]){ rooms[rid].logs.push(msg); if(rooms[ri
 function checkBotTurn(rid){ const g=rooms[rid]; if(!g)return; const cur=g.players[g.turnIndex]; if(cur&&cur.isBot) setTimeout(()=>botAction(rid,cur),1500); }
 function botAction(rid,p){ const g=rooms[rid]; if(!g)return; if(g.phase==='BURST')return; if(g.phase==='SETUP'){ if(g.subPhase==='SETTLEMENT'){ const vs=g.board.vertices.filter(v=>!v.owner&&!g.board.edges.some(e=>(e.v1===v.id||e.v2===v.id)&&g.board.vertices.find(vt=>vt.id===(e.v1===v.id?e.v2:e.v1)).owner)); if(vs.length) handleBuildSettlement(rid,p.id,vs[Math.floor(Math.random()*vs.length)].id); } else { const es=g.board.edges.filter(e=>(e.v1===g.lastSettlementId||e.v2===g.lastSettlementId)&&!e.owner); if(es.length) handleBuildRoad(rid,p.id,es[0].id); } } else if(g.phase==='ROBBER'){ const hs=g.board.hexes.filter(h=>h.id!==g.robberHexId&&h.resource!=='desert'); if(hs.length) handleMoveRobber(rid,p.id,hs[Math.floor(Math.random()*hs.length)].id); } else { if(!g.diceResult) handleRollDice(rid,p.id); else { let acted=false; if(!acted&&p.resources.forest>=1&&p.resources.hill>=1){ const es=g.board.edges.filter(e=>!e.owner&&(g.board.edges.some(oe=>oe.owner===p.color&&(oe.v1===e.v1||oe.v1===e.v2||oe.v2===e.v1||oe.v2===e.v2))||g.board.vertices.some(v=>v.owner===p.color&&(v.id===e.v1||v.id===e.v2)))); if(es.length){handleBuildRoad(rid,p.id,es[0].id);acted=true;} } if(!acted) handleEndTurn(rid,p.id); else setTimeout(()=>botAction(rid,p),1000); } } }
 
-// ★修正: 開拓地建設ロジック
+// ★修正: 建設失敗時にメッセージを送る
 function handleBuildSettlement(rid, pid, vId) {
     const game = rooms[rid];
     const player = game.players.find(p => p.id === pid);
     if (!player || game.players[game.turnIndex].id !== pid) return;
     const vertex = game.board.vertices.find(v => v.id === vId);
-    if (!vertex || vertex.owner) return; 
+    if (!vertex) return;
+    if (vertex.owner) { io.to(pid).emit('message', 'そこには既に建物があります'); return; }
     
-    // 距離ルール (隣接頂点に建物なし)
     const neighbors = game.board.edges.filter(e => e.v1 === vId || e.v2 === vId).map(e => (e.v1 === vId ? e.v2 : e.v1));
-    if (neighbors.some(nId => game.board.vertices.find(v => v.id === nId).owner)) return;
+    if (neighbors.some(nId => game.board.vertices.find(v => v.id === nId).owner)) {
+        io.to(pid).emit('message', '隣接する交差点に建物があるため置けません'); 
+        return;
+    }
 
     if (game.phase === 'MAIN') {
-        // 道と繋がっているか
         const connected = game.board.edges.some(e => e.owner === player.color && (e.v1===vId || e.v2===vId));
-        if(!connected) return;
+        if(!connected) { io.to(pid).emit('message', '自分の道とつながっていません'); return; }
         if (!payCost(game, player, { forest: 1, hill: 1, field: 1, pasture: 1 })) return;
     }
     
@@ -253,7 +254,6 @@ function handleBuildSettlement(rid, pid, vId) {
     addLog(rid, `${player.name} が開拓地を建設`);
     io.to(rid).emit('playSound', 'build');
 
-    // SETUP時の資源獲得
     if (game.phase === 'SETUP' && game.setupStep >= game.players.length) {
         game.board.hexes.forEach(h => {
             if (Math.abs(Math.hypot(h.x - vertex.x, h.y - vertex.y) - 1.0) < 0.1 && h.resource !== 'desert' && game.bank[h.resource] > 0) {
@@ -267,7 +267,7 @@ function handleBuildSettlement(rid, pid, vId) {
     updateVictoryPoints(rid);
     
     if (game.phase === 'SETUP') {
-        game.subPhase = 'ROAD'; // SETUP中は次は道
+        game.subPhase = 'ROAD';
         io.to(rid).emit('updateState', game);
         checkBotTurn(rid);
     } else {
@@ -276,8 +276,7 @@ function handleBuildSettlement(rid, pid, vId) {
 }
 
 function handleBuildCity(rid,pid,vid){ const g=rooms[rid], p=g.players.find(x=>x.id===pid); if(!p||g.players[g.turnIndex].id!==pid||g.phase!=='MAIN')return; const v=g.board.vertices.find(x=>x.id===vid); if(!v||v.owner!==p.color||v.type!=='settlement')return; if(!payCost(g,p,{field:2,mountain:3}))return; v.type='city'; addLog(rid,`${p.name} 都市`); io.to(rid).emit('playSound','build'); updateVictoryPoints(rid); io.to(rid).emit('updateState',g); }
-function handleBuildRoad(rid,pid,eid){ const g=rooms[rid], p=g.players.find(x=>x.id===pid); if(!p||g.players[g.turnIndex].id!==pid)return; const e=g.board.edges.find(x=>x.id===eid); if(!e||e.owner)return; if(g.phase==='SETUP'){ if(e.v1!==g.lastSettlementId&&e.v2!==g.lastSettlementId)return; } else { const c=g.board.edges.some(oe=>oe.owner===p.color&&(oe.v1===eid||oe.v1===e.v2||oe.v2===eid||oe.v2===e.v2))||g.board.vertices.some(v=>v.owner===p.color&&(v.id===e.v1||v.id===e.v2)); if(!c)return; if(g.roadBuildingCount>0){ g.roadBuildingCount--; addLog(rid,`${p.name} 街道`); } else { if(!payCost(g,p,{forest:1,hill:1}))return; } } e.owner=p.color; p.roadLength++; checkLongestRoad(rid,p); addLog(rid,`${p.name} 道`); io.to(rid).emit('playSound','build'); updateVictoryPoints(rid); if(g.phase==='SETUP'){ g.setupStep++; if(g.setupStep>=g.setupTurnOrder.length){ g.phase='MAIN'; g.turnIndex=0; g.subPhase='MAIN_ACTION'; g.diceResult=null; 
-    // ★数字表示タイミング
+function handleBuildRoad(rid,pid,eid){ const g=rooms[rid], p=g.players.find(x=>x.id===pid); if(!p||g.players[g.turnIndex].id!==pid)return; const e=g.board.edges.find(x=>x.id===eid); if(!e||e.owner)return; if(g.phase==='SETUP'){ if(e.v1!==g.lastSettlementId&&e.v2!==g.lastSettlementId){io.to(pid).emit('message','直前に置いた開拓地に接続する必要があります');return;} } else { const c=g.board.edges.some(oe=>oe.owner===p.color&&(oe.v1===eid||oe.v1===e.v2||oe.v2===eid||oe.v2===e.v2))||g.board.vertices.some(v=>v.owner===p.color&&(v.id===e.v1||v.id===e.v2)); if(!c){io.to(pid).emit('message','自分の道や建物とつながっていません');return;} if(g.roadBuildingCount>0){ g.roadBuildingCount--; addLog(rid,`${p.name} 街道`); } else { if(!payCost(g,p,{forest:1,hill:1}))return; } } e.owner=p.color; p.roadLength++; checkLongestRoad(rid,p); addLog(rid,`${p.name} 道`); io.to(rid).emit('playSound','build'); updateVictoryPoints(rid); if(g.phase==='SETUP'){ g.setupStep++; if(g.setupStep>=g.setupTurnOrder.length){ g.phase='MAIN'; g.turnIndex=0; g.subPhase='MAIN_ACTION'; g.diceResult=null; 
     if(g.settings.hideNumbers) { g.board.hexes.forEach((h,i)=>{ h.number=g.hiddenNumbers[i]; }); }
     addLog(rid,"開始！"); io.to(rid).emit('playSound','start'); } else { g.turnIndex=g.setupTurnOrder[g.setupStep]; g.subPhase='SETTLEMENT'; } io.to(rid).emit('updateState',g); checkBotTurn(rid); } else io.to(rid).emit('updateState',g); }
 function handleBuyCard(rid,pid){ const g=rooms[rid], p=g.players.find(x=>x.id===pid); if(!p||g.players[g.turnIndex].id!==pid||g.phase!=='MAIN')return; if(g.devCardDeck.length===0||!payCost(g,p,{field:1,pasture:1,mountain:1}))return; const c=g.devCardDeck.pop(); p.cards.push({type:c,canUse:false}); addLog(rid,`${p.name} カード購入`); if(c==='victory')updateVictoryPoints(rid); io.to(rid).emit('playSound','build'); io.to(rid).emit('updateState',g); }
