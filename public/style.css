@@ -20,7 +20,6 @@ select, input { border-radius: 4px; border: 1px solid #ccc; padding: 8px; font-s
 .input-group label { display: block; font-size: 12px; color: #555; margin-bottom: 3px; }
 .input-group input, .input-group select { width: 100%; }
 
-/* Tab Style */
 .tab-container { display: flex; margin-bottom: 10px; border-bottom: 2px solid #ddd; }
 .tab-btn { flex: 1; background: transparent; color: #666; border-radius: 5px 5px 0 0; padding: 10px; }
 .tab-btn.active { background: #eee; color: #333; border-bottom: 2px solid #4CAF50; margin-bottom: -2px; }
@@ -50,7 +49,7 @@ select, input { border-radius: 4px; border: 1px solid #ccc; padding: 8px; font-s
 #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100; }
 #ui-layer > * { pointer-events: auto; }
 
-/* Chat */
+/* Chat - 位置を調整して重なり回避 */
 #chat-container {
     position: absolute; top: 120px; left: 10px; width: 200px;
     z-index: 300; background: rgba(255,255,255,0.85); border-radius: 8px; padding: 5px;
@@ -123,3 +122,7 @@ select, input { border-radius: 4px; border: 1px solid #ccc; padding: 8px; font-s
 /* Dice Anim */
 #dice-anim-overlay { z-index: 9000; }
 .die { border: 2px solid #333; }
+#burst-selector { margin: 20px 0; }
+#burst-selector button { padding: 5px 10px; margin: 0 5px; background: #666; }
+#result-stats h3 { border-bottom: 1px solid #ccc; }
+#timer-display, #pc-timer { font-family: monospace; font-size: 1.2em; }
