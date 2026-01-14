@@ -19,28 +19,29 @@ const DEFAULT_SETTINGS = {
     mapType: 'standard', mapSize: 'normal', victoryPoints: 10, burstEnabled: true
 };
 
-// ★修正: マップ生成ロジック
+// ★修正: 確実なマップ生成ロジック
 function createBoardData(mapSize, mapType) {
-    const hexes=[], vertices=[], edges=[], ports=[]; let id=0;
+    const hexes=[], vertices=[], edges=[], ports=[];
+    let id=0;
     
-    // 1. 座標生成
+    // 1. ヘックス座標の生成
     if (mapType === 'random') {
         const targetCount = mapSize === 'extended' ? 30 : 19;
-        const qrs = new Set(['0,0']); 
+        const qrs = new Set(['0,0']);
         const dirs = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
         while(qrs.size < targetCount) {
-            const arr = Array.from(qrs); 
+            const arr = Array.from(qrs);
             const base = arr[Math.floor(Math.random()*arr.length)].split(',').map(Number);
-            const d = dirs[Math.floor(Math.random()*6)]; 
+            const d = dirs[Math.floor(Math.random()*6)];
             qrs.add(`${base[0]+d[0]},${base[1]+d[1]}`);
         }
-        qrs.forEach(str => { 
-            const [q,r]=str.split(',').map(Number); 
-            const x=Math.sqrt(3)*(q+r/2.0), y=3/2*r; 
-            hexes.push({id:id++,q,r,x,y,resource:null,number:0}); 
+        qrs.forEach(str => {
+            const [q,r]=str.split(',').map(Number);
+            const x=Math.sqrt(3)*(q+r/2.0), y=3/2*r;
+            hexes.push({id:id++, q, r, x, y, resource:null, number:null});
         });
     } else {
-        // 定型マップ (3-4-5-4-3)
+        // 定型マップ
         const mapDef = mapSize === 'extended' 
             ? [{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}]
             : [{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
@@ -49,46 +50,51 @@ function createBoardData(mapSize, mapType) {
             for(let i=0; i<row.count; i++){ 
                 const q=row.qStart+i, r=row.r; 
                 const x=Math.sqrt(3)*(q+r/2.0), y=3/2*r; 
-                hexes.push({id:id++,q,r,x,y,resource:null,number:0}); 
+                hexes.push({id:id++, q, r, x, y, resource:null, number:null}); 
             }
         });
     }
 
-    // 2. 資源割り当て (砂漠1つ保証)
-    const count = hexes.length;
-    const baseRes = ['forest','hill','mountain','field','pasture'];
-    const resList = ['desert']; // まず砂漠を1つ入れる
+    // 2. 資源の分配（固定数で確実に生成）
+    let resources = [];
+    if (mapSize === 'extended') {
+        // 拡張: 木6, 羊6, 麦6, 土5, 鉄5, 砂漠2 (計30)
+        resources = [
+            ...Array(6).fill('forest'), ...Array(6).fill('pasture'), ...Array(6).fill('field'),
+            ...Array(5).fill('hill'), ...Array(5).fill('mountain'), ...Array(2).fill('desert')
+        ];
+    } else {
+        // 通常: 木4, 羊4, 麦4, 土3, 鉄3, 砂漠1 (計19)
+        resources = [
+            ...Array(4).fill('forest'), ...Array(4).fill('pasture'), ...Array(4).fill('field'),
+            ...Array(3).fill('hill'), ...Array(3).fill('mountain'), ...Array(1).fill('desert')
+        ];
+    }
+    // ランダムマップなどで枚数が合わない場合の調整
+    while(resources.length < hexes.length) resources.push('desert');
+    while(resources.length > hexes.length) resources.pop();
     
-    // 残りのタイル数を計算
-    const remaining = count - 1; 
-    for(let i=0; i<remaining; i++) {
-        resList.push(baseRes[i % 5]); // 5種の資源を均等に
+    // シャッフル
+    resources.sort(() => Math.random() - 0.5);
+
+    // 3. 数字の分配
+    let numbers = [];
+    if (mapSize === 'extended') {
+        numbers = [2,3,3,4,4,4,5,5,5,6,6,6,8,8,8,9,9,9,10,10,10,11,11,11,12]; // 砂漠2つ分除く28個
+    } else {
+        numbers = [5,2,6,3,8,10,9,12,11,4,8,10,9,4,5,6,3,11]; // 砂漠1つ分除く18個
     }
     // シャッフル
-    const res = resList.sort(() => Math.random() - 0.5);
+    numbers.sort(() => Math.random() - 0.5);
 
-    // 3. 数字割り当て (砂漠以外)
-    let baseNums = [2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12];
-    if (mapSize === 'extended') baseNums = [...baseNums, 2,3,4,5,6,8,9,10,11,12];
-    
-    const numList = [];
-    // 必要な数だけ数字リストを作成
-    let ni = 0;
-    // 砂漠の分(1つ)を除いた数だけ数字が必要
-    while(numList.length < count - 1) {
-        numList.push(baseNums[ni % baseNums.length]);
-        ni++;
-    }
-    const nums = numList.sort(() => Math.random() - 0.5);
-
-    // 4. ヘックスに適用
-    let n_idx = 0;
+    // 4. ヘックスへの割り当て
+    let numIdx = 0;
     hexes.forEach(h => {
-        h.resource = res.shift(); // 先頭から取り出す
+        h.resource = resources.shift();
         if (h.resource === 'desert') {
             h.number = null; // 砂漠は数字なし
         } else {
-            h.number = nums[n_idx++] || 7; // 万が一足りなければ7
+            h.number = numbers[numIdx++] || 7; // 万が一不足なら7
         }
     });
 
@@ -197,25 +203,11 @@ io.on('connection', (socket) => {
         const game = rooms[roomId];
         socket.join(roomId);
         const existing = game.players.find(p => p.id === socket.id);
-        if (existing) {
-            existing.name = playerName || existing.name;
-            io.to(roomId).emit('updateState', game);
-            return;
-        }
-        if (game.players.filter(p=>!p.isBot).length >= game.settings.humanLimit) {
-            game.spectators.push(socket.id);
-            socket.emit('message', '観戦モード');
-            socket.emit('updateState', game);
-            return;
-        }
+        if (existing) { existing.name = playerName || existing.name; io.to(roomId).emit('updateState', game); return; }
+        if (game.players.filter(p=>!p.isBot).length >= game.settings.humanLimit) { game.spectators.push(socket.id); socket.emit('message', '観戦モード'); socket.emit('updateState', game); return; }
         const colors = ['red', 'blue', 'orange', 'white', 'green', 'brown'];
         const color = colors.find(c => !game.players.map(p => p.color).includes(c)) || 'black';
-        const player = {
-            id: socket.id, name: playerName || `Player ${game.players.length+1}`,
-            color: color, isBot: false,
-            resources: { forest: 0, hill: 0, mountain: 0, field: 0, pasture: 0 },
-            cards: [], victoryPoints: 0, roadLength: 0, armySize: 0, achievements: []
-        };
+        const player = { id: socket.id, name: playerName || `Player ${game.players.length+1}`, color: color, isBot: false, resources: { forest: 0, hill: 0, mountain: 0, field: 0, pasture: 0 }, cards: [], victoryPoints: 0, roadLength: 0, armySize: 0, achievements: [] };
         game.players.push(player);
         game.stats.resourceCollected[player.id] = 0;
         addLog(roomId, `${player.name} 参加`);
@@ -227,19 +219,14 @@ io.on('connection', (socket) => {
         const game = rooms[roomId];
         if (game.phase !== 'SETUP' && game.phase !== 'GAME_OVER') return;
 
-        // ★ここでマップ生成
+        // ★マップ生成を実行 (修正版)
         game.board = createBoardData(game.settings.mapSize, game.settings.mapType);
         
+        // 盗賊の初期位置（砂漠）
         const desert = game.board.hexes.find(h => h.resource === 'desert');
-        if (desert) {
-            game.robberHexId = desert.id;
-            // 念のため砂漠の数字をnullに
-            desert.number = null; 
-        }
+        if (desert) game.robberHexId = desert.id;
         
         game.hiddenNumbers = game.board.hexes.map(h => h.number);
-        // SETUP中は数字を隠すならここを有効化、今回は最初から見せるため隠さない
-        // game.board.hexes.forEach(h => { if (h.resource !== 'desert') h.number = null; });
 
         // Bot補充
         const minPlayers = 2;
@@ -251,10 +238,7 @@ io.on('connection', (socket) => {
         for(let i=0; i<botsNeeded; i++) {
             const botColor = colors.find(c => !game.players.map(p=>p.color).includes(c)) || 'gray';
             const botId = `bot-${roomId}-${game.players.length}`;
-            game.players.push({
-                id: botId, name: `Bot ${i+1}`, color: botColor, isBot: true,
-                resources: {forest:0,hill:0,mountain:0,field:0,pasture:0}, cards:[], victoryPoints:0, roadLength:0, armySize:0, achievements:[]
-            });
+            game.players.push({ id: botId, name: `Bot ${i+1}`, color: botColor, isBot: true, resources: {forest:0,hill:0,mountain:0,field:0,pasture:0}, cards:[], victoryPoints:0, roadLength:0, armySize:0, achievements:[] });
             game.stats.resourceCollected[botId] = 0;
         }
 
@@ -263,16 +247,16 @@ io.on('connection', (socket) => {
         game.setupTurnOrder = [...order, ...[...order].reverse()];
         game.turnIndex = game.setupTurnOrder[0];
         game.phase = 'SETUP';
-        game.subPhase = 'SETTLEMENT'; // ★明示
+        game.subPhase = 'SETTLEMENT';
 
-        addLog(roomId, `開始 (${game.players.length}人)`);
+        addLog(roomId, `ゲーム開始！ (${game.players.length}人)`);
         io.to(roomId).emit('gameStarted', game);
         io.to(roomId).emit('playSound', 'start');
         startTimer(roomId);
         setTimeout(() => checkBotTurn(roomId), 1000);
     });
 
-    // ... (アクション処理は変更なし) ...
+    // ... (アクション処理は前回と同じ) ...
     const wrap = (fn) => (data) => { const r = getRoomId(socket); if(r && rooms[r]) fn(r, socket.id, data); };
     socket.on('buildSettlement', wrap(handleBuildSettlement));
     socket.on('buildRoad', wrap(handleBuildRoad));
