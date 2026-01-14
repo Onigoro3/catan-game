@@ -11,30 +11,88 @@
         <div id="login-screen">
             <h2>カタンへようこそ</h2>
             <div id="connection-status">サーバー接続中...</div>
-            <input type="text" id="username" placeholder="名前 (例: おに)">
-            <input type="text" id="roomname" placeholder="部屋名 (空欄でdefault)" style="margin-top:10px;">
-            <div class="setting-row">
-                <label>人数:</label><select id="player-count"><option value="2">2人</option><option value="3">3人</option><option value="4" selected>4人</option><option value="5">5人</option><option value="6">6人</option></select>
+            
+            <div class="input-group">
+                <label>プレイヤー名</label>
+                <input type="text" id="username" placeholder="例: おに">
             </div>
-            <div class="setting-row">
-                <label>マップ:</label><select id="map-type"><option value="standard">定型</option><option value="random">ランダム</option></select>
+
+            <div class="tab-container">
+                <button onclick="showTab('join')" id="tab-join" class="tab-btn active">部屋に入る</button>
+                <button onclick="showTab('create')" id="tab-create" class="tab-btn">部屋を作る</button>
             </div>
-            <div class="setting-row">
-                <label>Bot:</label><select id="bot-level"><option value="weak">初級</option><option value="normal" selected>中級</option><option value="strong">上級</option></select>
+
+            <div id="form-join" class="form-content">
+                <div class="input-group">
+                    <label>部屋名</label>
+                    <input type="text" id="join-roomname" placeholder="例: room1 (空欄でdefault)">
+                </div>
+                <button onclick="joinGame()" class="action-btn join-color">参加する</button>
             </div>
-            <div class="setting-row">
-                <label>スキン:</label><select id="skin-select" onchange="changeSkin(this.value)"><option value="normal">ノーマル</option><option value="dark">ダーク</option><option value="retro">レトロ</option></select>
+
+            <div id="form-create" class="form-content" style="display:none;">
+                <div class="input-group">
+                    <label>部屋名</label>
+                    <input type="text" id="create-roomname" placeholder="新しい部屋名">
+                </div>
+                
+                <div class="setting-grid">
+                    <div class="setting-item">
+                        <label>募集人数</label>
+                        <select id="human-limit"><option value="1">1人</option><option value="2">2人</option><option value="3">3人</option><option value="4" selected>4人</option><option value="5">5人</option><option value="6">6人</option></select>
+                    </div>
+                    <div class="setting-item">
+                        <label>Bot数</label>
+                        <select id="bot-count"><option value="0" selected>なし</option><option value="1">1体</option><option value="2">2体</option><option value="3">3体</option><option value="4">4体</option></select>
+                    </div>
+                    <div class="setting-item">
+                        <label>Bot強さ</label>
+                        <select id="bot-diff"><option value="weak">初級</option><option value="normal" selected>中級</option><option value="strong">上級</option></select>
+                    </div>
+                    <div class="setting-item">
+                        <label>マップ形</label>
+                        <select id="map-type"><option value="standard">定型</option><option value="random">ランダム</option></select>
+                    </div>
+                    <div class="setting-item">
+                        <label>サイズ</label>
+                        <select id="map-size"><option value="normal" selected>標準</option><option value="extended">拡張</option></select>
+                    </div>
+                    <div class="setting-item">
+                        <label>勝利点</label>
+                        <select id="vp-goal"><option value="10" selected>10点</option><option value="12">12点</option></select>
+                    </div>
+                    <div class="setting-item" style="width:100%">
+                        <label>バースト(7)</label>
+                        <select id="burst-flag"><option value="true" selected>あり</option><option value="false">なし</option></select>
+                    </div>
+                </div>
+
+                <button onclick="createRoom()" class="action-btn create-color">部屋を作って参加</button>
             </div>
-            <button id="join-btn" onclick="joinGame()" style="margin-top:15px;" disabled>参加</button>
+            
+            <div class="skin-select-container">
+                <label>見た目: </label>
+                <select id="skin-select" onchange="changeSkin(this.value)">
+                    <option value="normal">ノーマル</option>
+                    <option value="dark">ダーク</option>
+                    <option value="retro">レトロ</option>
+                </select>
+            </div>
         </div>
+
         <div id="start-overlay" style="display:none;">
             <div class="overlay-content">
                 <h2>準備完了</h2>
                 <div id="room-info-display"></div>
-                <button onclick="copyInviteLink()" style="background:#008CBA; font-size:14px; margin-bottom:10px;">🔗 招待URLコピー</button>
+                <button onclick="copyInviteLink()" class="sub-btn">🔗 招待URLをコピー</button>
                 <button id="start-btn-big" onclick="startGame()" class="pulse-button">ゲーム開始</button>
             </div>
         </div>
+        
+        <div id="dice-anim-overlay" style="display:none;">
+            <div class="dice-box"><div id="die1" class="die">?</div><div id="die2" class="die">?</div></div>
+        </div>
+        
         <div id="burst-overlay" style="display:none;">
             <div class="overlay-content">
                 <h3 style="color:red;">手札過多！</h3>
@@ -43,65 +101,72 @@
                 <button onclick="submitBurst()" class="pulse-button">捨てる</button>
             </div>
         </div>
+        
         <div id="trade-req-overlay" style="display:none;">
             <div class="overlay-content">
                 <h3>交渉申し込み</h3>
                 <p><span id="req-sender"></span> からの提案</p>
-                <p>相手: <span id="req-give"></span> ➡ あなた: <span id="req-receive"></span></p>
-                <div style="display:flex; gap:10px; justify-content:center;">
-                    <button onclick="answerTrade(true)" style="background:#4CAF50;">承諾</button>
-                    <button onclick="answerTrade(false)" style="background:#f44336;">拒否</button>
+                <div class="trade-offer-view">
+                    <span id="req-give"></span> ➡ <span id="req-receive"></span>
+                </div>
+                <div class="btn-row">
+                    <button onclick="answerTrade(true)" class="accept-btn">承諾</button>
+                    <button onclick="answerTrade(false)" class="reject-btn">拒否</button>
                 </div>
             </div>
         </div>
+        
         <div id="winner-overlay" style="display:none;">
             <div class="overlay-content">
                 <h1 id="winner-name"></h1>
-                <div id="result-stats" style="text-align:left; max-height:200px; overflow-y:auto;"></div>
+                <div id="result-stats"></div>
                 <button onclick="location.reload()" class="pulse-button">トップへ戻る</button>
             </div>
         </div>
-        <div id="dice-anim-overlay" style="display:none;"><div class="dice-box"><div id="die1" class="die">?</div><div id="die2" class="die">?</div></div></div>
     </div>
 
     <div id="ui-layer">
         <div id="mobile-header">
             <div id="mobile-game-info">待機中...</div>
-            <div id="timer-display" style="font-weight:bold; color:red; margin-left:10px;">90</div>
-            <button id="menu-btn" onclick="toggleMenu()">☰ メニュー</button>
+            <div id="timer-display">90</div>
+            <button id="menu-btn" onclick="toggleMenu()">☰</button>
         </div>
+        
         <div id="side-menu" class="hidden">
             <div class="menu-content">
                 <button class="close-btn" onclick="toggleMenu()">×</button>
-                <div class="panel-box"><button onclick="copyInviteLink()" style="width:100%; background:#008CBA;">🔗 招待URL</button></div>
+                <button onclick="copyInviteLink()" class="menu-action-btn">🔗 招待URL</button>
                 <div class="panel-box"><h3>詳細</h3><div id="mobile-my-res"></div><div id="mobile-my-cards"></div></div>
                 <div class="panel-box"><h3>銀行</h3><div id="mobile-bank-res"></div></div>
                 <div class="panel-box"><h3>生産力</h3><div id="mobile-prod-list"></div></div>
                 <div class="panel-box"><h3>スコア</h3><div id="mobile-score-board"></div></div>
                 <div class="panel-box"><h3>ログ</h3><div id="mobile-log-area"></div></div>
-                <div class="panel-box" style="text-align:center;">
+                <div class="panel-box center-box">
                     <label>音量</label><input type="range" id="mobile-volume" min="0" max="1" step="0.1" value="0.3" onchange="syncVolume(this.value)">
-                    <button onclick="resetGame()" style="background:#666; margin-top:10px;">リセット</button>
+                    <button onclick="resetGame()" class="reset-btn">リセット</button>
                 </div>
             </div>
         </div>
 
         <div id="chat-container">
             <div id="chat-messages"></div>
-            <div style="display:flex;"><input type="text" id="chat-input"><button onclick="sendChat()">送</button></div>
+            <div class="chat-input-row">
+                <input type="text" id="chat-input" placeholder="チャット">
+                <button onclick="sendChat()">送</button>
+            </div>
         </div>
 
         <div id="pc-info-panel">
-            <div class="panel-box" style="text-align:center; font-size:20px; font-weight:bold; color:red;">⏰ <span id="pc-timer">90</span></div>
+            <div class="panel-box center-box time-box">⏰ <span id="pc-timer">90</span></div>
             <div class="panel-box"><h3>銀行</h3><div id="pc-bank-res"></div></div>
             <div class="panel-box"><h3>資源</h3><div id="pc-my-res"></div></div>
             <div class="panel-box"><h3>カード</h3><div id="pc-my-cards"></div></div>
             <div class="panel-box"><h3>スコア</h3><div id="pc-score-board"></div></div>
             <div class="panel-box"><h3>生産力</h3><div id="pc-prod-list"></div></div>
-            <div class="panel-box" style="text-align:center;">
+            <div class="panel-box center-box">
                 <input type="range" id="pc-volume" min="0" max="1" step="0.1" value="0.3" onchange="syncVolume(this.value)">
-                <button onclick="resetGame()" style="background:#666; width:100%; margin-top:5px;">リセット</button>
-                <button onclick="copyInviteLink()" style="background:#008CBA; width:100%; margin-top:5px;">招待URL</button>
+                <button onclick="resetGame()" class="reset-btn">リセット</button>
+                <button onclick="copyInviteLink()" class="invite-btn">招待URL</button>
             </div>
         </div>
         <div id="pc-log-container"><h3>ログ</h3><div id="pc-log-area"></div></div>
@@ -136,12 +201,12 @@
                             ➡ <select id="trade-receive"><option value="forest">🌲</option><option value="hill">🧱</option><option value="mountain">⛰️</option><option value="field">🌾</option><option value="pasture">🐑</option></select>
                             <button id="trade-btn" onclick="sendTrade()" disabled>交換</button>
                         </div>
-                        <div id="trade-rate-msg" style="font-size:10px; color:#555;">4:1</div>
+                        <div id="trade-rate-msg">4:1</div>
                     </div>
                 </div>
             </div>
         </div>
-        <div id="mobile-mini-status" style="top:90px;"><div id="mini-res"></div><div id="mini-score"></div></div>
+        <div id="mobile-mini-status"><div id="mini-res"></div><div id="mini-score"></div></div>
     </div>
     <canvas id="gameCanvas"></canvas>
     <script src="/socket.io/socket.io.js"></script>
