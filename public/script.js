@@ -3,7 +3,7 @@ try {
     socket = io();
 } catch (e) {
     console.error("Socket Error:", e);
-    alert("通信エラー: ページを更新してください");
+    alert("サーバー接続エラー: リロードしてください");
 }
 
 // ==========================================
@@ -28,7 +28,7 @@ const ctx = canvas.getContext('2d');
 let HEX_SIZE = 60;
 let gameState = null;
 let myId = null;
-let buildMode = null; 
+let buildMode = null; // MAINフェーズ用
 
 // カメラ
 let camera = { x: 0, y: 0, zoom: 1.0 };
@@ -75,7 +75,8 @@ function resizeCanvas() {
     const isExtended = (gameState && gameState.settings && gameState.settings.mapSize === 'extended');
     const scaleFactor = isExtended ? 16 : 11;
     
-    HEX_SIZE = Math.max(isMobile ? 38 : 50, minDim / scaleFactor);
+    // スマホ用に少し大きめに表示
+    HEX_SIZE = Math.max(isMobile ? 42 : 50, minDim / scaleFactor);
     
     if (gameState) render();
 }
@@ -151,6 +152,7 @@ if (socket) {
                 `設定: 人間${state.settings.humanLimit}人 + Bot${state.settings.botCount}`;
         }
         
+        // 初回配置へ
         camera.x = canvas.width / 2;
         camera.y = canvas.height * (window.innerWidth < 600 ? 0.45 : 0.5);
         resizeCanvas();
@@ -182,7 +184,7 @@ if (socket) {
                 document.getElementById('controls').style.display = 'none';
                 const btn = document.getElementById('start-btn-big');
                 if (btn) {
-                    btn.innerText = `ゲーム開始 (${state.players.length}人参加中)`;
+                    btn.innerText = `ゲーム開始 (現在${state.players.length}人)`;
                     btn.disabled = false;
                 }
             }
@@ -398,8 +400,7 @@ function render() {
             
             ctx.shadowBlur = 0;
             
-            // ★数字表示制御
-            // 設定でhideNumbersがTrue かつ SETUPフェーズなら隠す
+            // ★数字表示制御 (SETUP中は設定により隠す)
             let showNum = true;
             if (gameState.settings && gameState.settings.hideNumbers && gameState.phase === 'SETUP') {
                 showNum = false;
@@ -408,14 +409,11 @@ function render() {
             if (showNum && h.resource !== 'desert' && h.number !== null) {
                 drawNumberToken(p.x, p.y, h.number, s);
             } else if (!showNum && h.resource !== 'desert') {
-                // 隠れている場合は「？」
                 drawHiddenToken(p.x, p.y, s);
             }
         }
         
         if (gameState.robberHexId === h.id) drawRobber(p.x, p.y, s);
-        
-        // 盗賊移動ハイライト
         if (gameState.phase === 'ROBBER' && gameState.players[gameState.turnIndex].id === myId) {
             ctx.strokeStyle = 'red'; ctx.lineWidth = 3; ctx.stroke();
         }
@@ -455,14 +453,14 @@ function render() {
         }
     });
 
-    // 建物
+    // 建物 (SETUPフェーズで自分のターンの場合、建設可能な場所をハイライトしてもよいが、シンプルに全部描画)
     vertices.forEach(v => {
         const p = tr(v.x, v.y);
         if (v.owner) {
             if (v.type === 'city') drawCity(p.x, p.y, v.owner, s);
             else drawSettlement(p.x, p.y, v.owner, s);
         } else {
-            // 空の交差点（建設可能ならハイライトしたいが、シンプルに丸表示）
+            // 空の交差点
             ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(p.x, p.y, s*0.1, 0, Math.PI*2); ctx.fill();
         }
     });
@@ -532,7 +530,7 @@ function updateUI() {
         document.getElementById('mini-res').innerText = myPlayer ? `🎒 木${myPlayer.resources.forest} 土${myPlayer.resources.hill} 鉄${myPlayer.resources.mountain} 麦${myPlayer.resources.field} 羊${myPlayer.resources.pasture}` : "";
         document.getElementById('mini-score').innerText = myPlayer ? `🏆 ${myPlayer.victoryPoints}点` : "";
         const cur = gameState.players[gameState.turnIndex];
-        document.getElementById('mobile-game-info').innerHTML = cur ? `手番: <span style="color:${cur.color}">${cur.name}</span>` : "";
+        document.getElementById('mobile-game-info').innerHTML = cur ? `手番: <span style="color:${cur.color}">${cur.name}</span> (${gameState.phase})` : "";
     } else {
         const l = document.getElementById('pc-log-area'); if(l){l.innerHTML=logsHTML; l.scrollTop=l.scrollHeight;}
         document.getElementById('pc-bank-res').innerHTML = bankHTML;
@@ -541,10 +539,9 @@ function updateUI() {
         document.getElementById('pc-prod-list').innerHTML = prodHTML;
         document.getElementById('pc-score-board').innerHTML = scoreHTML;
         const cur = gameState.players[gameState.turnIndex];
-        document.getElementById('pc-game-info').innerHTML = cur ? `手番: <span style="color:${cur.color}">${cur.name}</span>` : "";
+        document.getElementById('pc-game-info').innerHTML = cur ? `手番: <span style="color:${cur.color}">${cur.name}</span> (${gameState.phase})` : "";
     }
 
-    // 操作パネルの表示制御
     const cur = gameState.players[gameState.turnIndex];
     if(!cur) return;
     const controls = document.getElementById('main-controls');
@@ -583,81 +580,74 @@ canvas.addEventListener('touchstart', e=>{if(e.touches.length===1){isDragging=tr
 canvas.addEventListener('touchmove', e=>{e.preventDefault(); if(e.touches.length===1 && isDragging){camera.x+=e.touches[0].clientX-lastPointer.x; camera.y+=e.touches[0].clientY-lastPointer.y; lastPointer={x:e.touches[0].clientX, y:e.touches[0].clientY}; render();} else if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; const d=Math.sqrt(dx*dx+dy*dy); camera.zoom=Math.min(Math.max(camera.zoom+(d-lastPinchDist)*0.005,0.5),3.0); lastPinchDist=d; render();}}, {passive:false});
 canvas.addEventListener('touchend', ()=>isDragging=false);
 
-// ★クリック判定 (座標変換強化 & 自動選択)
+// ★クリック判定 (最強版: 吸着)
 canvas.addEventListener('click', e => {
     if(!gameState || isDragging) return;
     const cur = gameState.players[gameState.turnIndex];
     if(cur.id !== myId) return;
     
     const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-
-    const tr = (wx, wy) => ({
-        x: wx * HEX_SIZE * camera.zoom + camera.x,
-        y: wy * HEX_SIZE * camera.zoom + camera.y
-    });
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    
+    // 画面座標変換ヘルパー
+    const tr=(wx,wy)=>({x:wx*HEX_SIZE*camera.zoom+camera.x, y:wy*HEX_SIZE*camera.zoom+camera.y});
 
     // 1. 盗賊
-    if(gameState.phase === 'ROBBER') {
-        let tH=null, minD=9999;
-        const hr = HEX_SIZE * camera.zoom;
-        gameState.board.hexes.forEach(h => {
-            const p = tr(h.x, h.y);
-            const dist = Math.hypot(p.x - clickX, p.y - clickY);
-            if(dist < hr && dist < minD) { minD=dist; tH=h; }
+    if(gameState.phase==='ROBBER'){
+        let th=null, minD=9999;
+        const hr = HEX_SIZE*camera.zoom;
+        gameState.board.hexes.forEach(h=>{ 
+            const p=tr(h.x,h.y); 
+            const d=Math.hypot(p.x-cx,p.y-cy); 
+            if(d<hr && d<minD){minD=d; th=h;} 
         });
-        if(tH) socket.emit('moveRobber', tH.id);
+        if(th) socket.emit('moveRobber', th.id);
         return;
     }
 
-    // 2. 建設 (SETUP or MAIN)
-    if(gameState.phase==='SETUP' || (gameState.phase==='MAIN' && gameState.diceResult)) {
-        
-        // SETUP中は自動でモード判定
-        let mode = buildMode;
-        if (gameState.phase === 'SETUP') {
-            mode = (gameState.subPhase === 'SETTLEMENT') ? 'settlement' : 'road';
-        }
-        
-        if (gameState.phase === 'MAIN' && !mode) return;
+    // 2. 建設モード自動判定
+    let mode = buildMode;
+    // SETUPフェーズなら強制的にモードを設定
+    if(gameState.phase==='SETUP') {
+        mode = (gameState.subPhase==='SETTLEMENT') ? 'settlement' : 'road';
+    }
 
-        // 頂点判定 (開拓地・都市)
-        if(mode==='settlement' || mode==='city') {
-            let tV=null, minD=50; // ヒット範囲広めに(50px)
-            gameState.board.vertices.forEach(v => {
-                const p = tr(v.x, v.y);
-                const dist = Math.hypot(p.x - clickX, p.y - clickY);
-                if(dist < minD) { minD=dist; tV=v; }
-            });
-            if(tV) {
-                if(mode==='city') socket.emit('buildCity', tV.id);
-                else socket.emit('buildSettlement', tV.id);
-                
-                if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); }
-                return;
-            }
-        }
+    if (!mode) return; // モードがなければ何もしない
 
-        // 辺判定 (道)
-        if(mode==='road') {
-            let tE=null, minD=50;
-            gameState.board.edges.forEach(e => {
-                const v1 = gameState.board.vertices.find(v=>v.id===e.v1);
-                const v2 = gameState.board.vertices.find(v=>v.id===e.v2);
-                if(v1 && v2) {
-                    const p1 = tr(v1.x, v1.y);
-                    const p2 = tr(v2.x, v2.y);
-                    const mx = (p1.x + p2.x) / 2;
-                    const my = (p1.y + p2.y) / 2;
-                    const dist = Math.hypot(mx - clickX, my - clickY);
-                    if(dist < minD) { minD=dist; tE=e; }
-                }
-            });
-            if(tE) {
-                socket.emit('buildRoad', tE.id);
-                if(gameState.phase==='MAIN') { buildMode=null; updateBuildMsg(); }
+    // 建設: 開拓地・都市
+    if(mode==='settlement' || mode==='city'){
+        let tv=null, minD=60; // 判定半径 60px (広め)
+        gameState.board.vertices.forEach(v=>{ 
+            const p=tr(v.x,v.y); 
+            const d=Math.hypot(p.x-cx,p.y-cy); 
+            if(d<minD){minD=d; tv=v;} 
+        });
+        
+        if(tv){
+            if(mode==='city') socket.emit('buildCity', tv.id);
+            else socket.emit('buildSettlement', tv.id);
+            
+            // MAINフェーズならモード解除
+            if(gameState.phase==='MAIN'){buildMode=null; updateBuildMsg();}
+        }
+    } 
+    // 建設: 道
+    else if(mode==='road'){
+        let te=null, minD=60;
+        gameState.board.edges.forEach(e=>{
+            const v1=gameState.board.vertices.find(v=>v.id===e.v1);
+            const v2=gameState.board.vertices.find(v=>v.id===e.v2);
+            if(v1&&v2){ 
+                const p1=tr(v1.x,v1.y), p2=tr(v2.x,v2.y); 
+                const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2; 
+                const d=Math.hypot(mx-cx,my-cy); 
+                if(d<minD){minD=d; te=e;} 
             }
+        });
+        if(te){
+            socket.emit('buildRoad', te.id);
+            if(gameState.phase==='MAIN'){buildMode=null; updateBuildMsg();}
         }
     }
 });

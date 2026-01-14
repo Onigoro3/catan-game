@@ -17,14 +17,14 @@ const rooms = {};
 const DEFAULT_SETTINGS = {
     humanLimit: 4, botCount: 0, botDifficulty: 'normal',
     mapType: 'standard', mapSize: 'normal', victoryPoints: 10, burstEnabled: true,
-    hideNumbers: false // ★追加: 数字を隠す設定
+    hideNumbers: false
 };
 
-// マップ生成ロジック (変更なしだが再掲)
+// マップ生成 (変更なしだが記述)
 function createBoardData(mapSize, mapType) {
     const hexes=[], vertices=[], edges=[], ports=[]; let id=0;
-    // ... (座標生成、資源割り当てなどは前回と同じ完璧なロジックを使用) ...
-    // 省略せずに記述します
+    
+    // 1. 座標
     if (mapType === 'random') {
         const targetCount = mapSize === 'extended' ? 30 : 19;
         const qrs = new Set(['0,0']); const dirs = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
@@ -37,19 +37,45 @@ function createBoardData(mapSize, mapType) {
         const mapDef = mapSize === 'extended' ? [{r:-3,qStart:0,count:3},{r:-2,qStart:-1,count:4},{r:-1,qStart:-2,count:5},{r:0,qStart:-3,count:6},{r:1,qStart:-3,count:5},{r:2,qStart:-3,count:4},{r:3,qStart:-3,count:3}] : [{r:-2,qStart:0,count:3},{r:-1,qStart:-1,count:4},{r:0,qStart:-2,count:5},{r:1,qStart:-2,count:4},{r:2,qStart:-2,count:3}];
         mapDef.forEach(row=>{ for(let i=0;i<row.count;i++){ const q=row.qStart+i,r=row.r; const x=Math.sqrt(3)*(q+r/2.0),y=3/2*r; hexes.push({id:id++,q,r,x,y,resource:null,number:null}); } });
     }
+
+    // 2. 資源 (砂漠1つ保証)
     let resources = mapSize==='extended' ? [...Array(6).fill('forest'),...Array(6).fill('pasture'),...Array(6).fill('field'),...Array(5).fill('hill'),...Array(5).fill('mountain'),...Array(2).fill('desert')] : [...Array(4).fill('forest'),...Array(4).fill('pasture'),...Array(4).fill('field'),...Array(3).fill('hill'),...Array(3).fill('mountain'),...Array(1).fill('desert')];
-    while(resources.length<hexes.length) resources.push('desert'); while(resources.length>hexes.length) resources.pop(); resources.sort(()=>Math.random()-0.5);
+    while(resources.length < hexes.length) resources.push('desert');
+    while(resources.length > hexes.length) resources.pop();
+    resources.sort(() => Math.random() - 0.5);
+
+    // 3. 数字
     let numbers = mapSize==='extended' ? [2,3,3,4,4,4,5,5,5,6,6,6,8,8,8,9,9,9,10,10,10,11,11,11,12] : [5,2,6,3,8,10,9,12,11,4,8,10,9,4,5,6,3,11];
-    numbers.sort(()=>Math.random()-0.5);
-    let nIdx=0; hexes.forEach(h=>{ h.resource=resources.shift(); if(h.resource==='desert') h.number=null; else h.number=numbers[nIdx++]||7; });
+    numbers.sort(() => Math.random() - 0.5);
+
+    // 4. 割り当て
+    let nIdx = 0;
+    hexes.forEach(h => {
+        h.resource = resources.shift();
+        if (h.resource === 'desert') h.number = null;
+        else h.number = numbers[nIdx++] || 7;
+    });
+
+    // 5. 構成要素
     const rawV=[]; hexes.forEach(h=>{ for(let i=0;i<6;i++){ const r=Math.PI/180*(60*i-30); rawV.push({x:h.x+Math.cos(r), y:h.y+Math.sin(r)}); } });
     rawV.forEach(rv=>{ if(!vertices.find(v=>Math.hypot(v.x-rv.x,v.y-rv.y)<0.1)) vertices.push({id:vertices.length,x:rv.x,y:rv.y,owner:null,type:'none'}); });
     for(let i=0;i<vertices.length;i++){ for(let j=i+1;j<vertices.length;j++){ if(Math.hypot(vertices[i].x-vertices[j].x,vertices[i].y-vertices[j].y)<1.1) edges.push({id:edges.length,v1:vertices[i].id,v2:vertices[j].id,owner:null}); } }
+    
     let cx=0,cy=0; vertices.forEach(v=>{cx+=v.x; cy+=v.y;}); cx/=vertices.length; cy/=vertices.length;
     const th=(mapType==='random'?2.0:(mapSize==='extended'?3.2:2.4));
     const outer=vertices.filter(v=>Math.hypot(v.x-cx,v.y-cy)>th).sort((a,b)=>Math.atan2(a.y-cy,a.x-cx)-Math.atan2(b.y-cy,b.x-cx));
     const pts=['any','pasture','any','forest','any','hill','any','field','mountain','any','any'];
-    let pi=0; for(let i=0;i<outer.length&&pi<pts.length;i+=3){ if(i+1<outer.length){ const v1=outer[i], v2=outer[i+1]; if(edges.some(e=>(e.v1===v1.id&&e.v2===v2.id)||(e.v1===v2.id&&e.v2===v1.id))){ const mx=(v1.x+v2.x)/2, my=(v1.y+v2.y)/2; const ang=Math.atan2(my-cy,mx-cx); ports.push({type:pts[pi++],v1:v1.id,v2:v2.id,x:mx+0.4*Math.cos(ang),y:my+0.4*Math.sin(ang)}); } } }
+    let pi=0; 
+    for(let i=0;i<outer.length&&pi<pts.length;i+=3){
+        if(i+1<outer.length){
+            const v1=outer[i], v2=outer[i+1];
+            if(edges.some(e=>(e.v1===v1.id&&e.v2===v2.id)||(e.v1===v2.id&&e.v2===v1.id))){
+                const mx=(v1.x+v2.x)/2, my=(v1.y+v2.y)/2;
+                const ang=Math.atan2(my-cy,mx-cx);
+                ports.push({type:pts[pi++],v1:v1.id,v2:v2.id,x:mx+0.4*Math.cos(ang),y:my+0.4*Math.sin(ang)});
+            }
+        }
+    }
     return {hexes,vertices,edges,ports};
 }
 
@@ -137,9 +163,9 @@ io.on('connection', (socket) => {
         game.board = createBoardData(game.settings.mapSize, game.settings.mapType);
         
         const desert = game.board.hexes.find(h => h.resource === 'desert');
-        if (desert) game.robberHexId = desert.id;
+        if (desert) { game.robberHexId = desert.id; desert.number = null; }
         
-        // ★数字隠し処理
+        // 数字隠し
         game.hiddenNumbers = game.board.hexes.map(h => h.number);
         if (game.settings.hideNumbers) {
             game.board.hexes.forEach(h => { if (h.resource !== 'desert') h.number = null; });
@@ -172,13 +198,9 @@ io.on('connection', (socket) => {
         setTimeout(() => checkBotTurn(roomId), 1000);
     });
 
-    // アクション処理
     const wrap = (fn) => (data) => { const r = getRoomId(socket); if(r && rooms[r]) fn(r, socket.id, data); };
-    
-    // ★修正: 建設判定の緩和
     socket.on('buildSettlement', wrap(handleBuildSettlement));
     socket.on('buildRoad', wrap(handleBuildRoad));
-    
     socket.on('rollDice', wrap(handleRollDice));
     socket.on('endTurn', wrap(handleEndTurn));
     socket.on('trade', wrap(handleTrade));
@@ -186,7 +208,6 @@ io.on('connection', (socket) => {
     socket.on('playCard', wrap(handlePlayCard));
     socket.on('moveRobber', wrap(handleMoveRobber));
     socket.on('buildCity', wrap(handleBuildCity));
-    // ... (チャット等は前回と同じ) ...
     socket.on('chatMessage', (msg) => { const r=getRoomId(socket); if(r){ const p=rooms[r].players.find(pl=>pl.id===socket.id); rooms[r].chats.push({name:p?p.name:"観戦", msg, color:p?p.color:'#666'}); if(rooms[r].chats.length>50)rooms[r].chats.shift(); io.to(r).emit('chatUpdate', rooms[r].chats[rooms[r].chats.length-1]); } });
     socket.on('discardResources', (d) => { const r=getRoomId(socket); if(r){ const g=rooms[r], p=g.players.find(pl=>pl.id===socket.id); if(g.phase==='BURST'&&g.burstPlayers.includes(p.id)){ for(let k in d){p.resources[k]-=d[k]; g.bank[k]+=d[k];} addLog(r,`${p.name} 資源破棄`); g.burstPlayers=g.burstPlayers.filter(id=>id!==p.id); if(g.burstPlayers.length===0){g.phase='ROBBER'; addLog(r,"盗賊移動");} io.to(r).emit('updateState',g); checkBotTurn(r); } } });
     socket.on('offerTrade', (o)=>{ const r=getRoomId(socket); if(r){ const g=rooms[r], s=g.players.find(p=>p.id===socket.id), t=g.players.find(p=>p.id===o.targetId); if(s&&t){ if(t.isBot) handleBotTrade(r,s,t,o.give,o.receive); else { g.pendingTrade={senderId:s.id, targetId:t.id, give:o.give, receive:o.receive}; io.to(t.id).emit('tradeRequested',{senderName:s.name, give:o.give, receive:o.receive}); addLog(r,`${s.name}→${t.name} 交渉`); } } } });
@@ -196,14 +217,26 @@ io.on('connection', (socket) => {
 });
 
 // ロジック
+function handleBotTrade(rid,s,b,g,r){ const gm=rooms[rid]; let acc=false; if(b.resources[r]>0) acc=true; if(acc){ s.resources[g]--; b.resources[g]++; s.resources[r]++; b.resources[r]--; addLog(rid,`${b.name} 成立`); io.to(rid).emit('updateState',gm); } else io.to(s.id).emit('message','拒否'); }
+function handleRollDice(rid,pid){ const g=rooms[rid]; if(g.players[g.turnIndex].id!==pid||g.diceResult)return; g.diceResult=Math.floor(Math.random()*6)+1+Math.floor(Math.random()*6)+1; g.stats.diceHistory[g.diceResult]++; addLog(rid,`出目:${g.diceResult}`); if(g.diceResult===7){ io.to(rid).emit('playSound','robber'); if(g.settings.burstEnabled){ g.burstPlayers=[]; g.players.forEach(p=>{ const sum=Object.values(p.resources).reduce((a,b)=>a+b,0); if(sum>=8){ g.burstPlayers.push(p.id); if(p.isBot){ const d=Math.floor(sum/2); for(let i=0;i<d;i++){ const k=Object.keys(p.resources).filter(x=>p.resources[x]>0); if(k.length)p.resources[k[Math.floor(Math.random()*k.length)]]--; } g.burstPlayers=g.burstPlayers.filter(id=>id!==p.id); addLog(rid,`${p.name} 破棄`); } } }); if(g.burstPlayers.length>0){ g.phase='BURST'; addLog(rid,"バースト発生"); } else g.phase='ROBBER'; } else g.phase='ROBBER'; } else { io.to(rid).emit('playSound','dice'); g.board.hexes.forEach(h=>{ if(h.number===g.diceResult&&h.id!==g.robberHexId&&h.resource!=='desert'){ g.board.vertices.forEach(v=>{ if(Math.abs(Math.hypot(v.x-h.x,v.y-h.y)-1.0)<0.1&&v.owner){ const pl=g.players.find(p=>p.color===v.owner); const amt=v.type==='city'?2:1; if(pl&&g.bank[h.resource]>=amt){ g.bank[h.resource]-=amt; pl.resources[h.resource]+=amt; g.stats.resourceCollected[pl.id]+=amt; } } }); } }); } io.to(rid).emit('updateState',g); checkBotTurn(rid); }
+function handleEndTurn(rid,pid){ const g=rooms[rid]; if(g.players[g.turnIndex].id!==pid)return; g.players[g.turnIndex].cards.forEach(c=>c.canUse=true); g.roadBuildingCount=0; g.turnIndex=(g.turnIndex+1)%g.players.length; g.diceResult=null; g.subPhase='MAIN_ACTION'; startTimer(rid); addLog(rid,`次: ${g.players[g.turnIndex].name}`); io.to(rid).emit('playSound','turnChange'); io.to(rid).emit('updateState',g); checkBotTurn(rid); }
+function handleTrade(rid,pid,d){ const g=rooms[rid], p=g.players.find(x=>x.id===pid); if(!p||g.players[g.turnIndex].id!==pid)return; if(p.resources[d.give]<1)return; /*port check*/ p.resources[d.give]--; g.bank[d.give]++; p.resources[d.receive]++; g.bank[d.receive]--; addLog(rid,`${p.name} 交換`); io.to(rid).emit('updateState',g); }
+function updateVictoryPoints(rid){ const g=rooms[rid]; const tvp=parseInt(g.settings.victoryPoints)||10; g.players.forEach(p=>{ let pts=0; g.board.vertices.forEach(v=>{ if(v.owner===p.color) pts+=(v.type==='city'?2:1); }); pts+=p.cards.filter(c=>c.type==='victory').length; if(g.largestArmy.playerId===p.id)pts+=3; if(g.longestRoad.playerId===p.id)pts+=3; p.victoryPoints=pts; }); const w=g.players.find(p=>p.victoryPoints>=tvp); if(w){ g.winner=w; g.phase='GAME_OVER'; addLog(rid,`勝者:${w.name}`); } }
+function checkLargestArmy(rid,player){ const g=rooms[rid]; if(player.armySize>=3&&player.armySize>g.largestArmy.size){ if(g.largestArmy.playerId!==player.id){g.largestArmy={playerId:player.id,size:player.armySize};addLog(rid,`騎士賞:${player.name}`);}else{g.largestArmy.size=player.armySize;} } }
+function checkLongestRoad(rid,player){ const g=rooms[rid]; if(player.roadLength>=5&&player.roadLength>g.longestRoad.length){ if(g.longestRoad.playerId!==player.id){g.longestRoad={playerId:player.id,length:player.roadLength};addLog(rid,`交易賞:${player.name}`);}else{g.longestRoad.length=player.roadLength;} } }
+function addLog(rid,msg){ if(rooms[rid]){ rooms[rid].logs.push(msg); if(rooms[rid].logs.length>15)rooms[rid].logs.shift(); } }
+function checkBotTurn(rid){ const g=rooms[rid]; if(!g)return; const cur=g.players[g.turnIndex]; if(cur&&cur.isBot) setTimeout(()=>botAction(rid,cur),1500); }
+function botAction(rid,p){ const g=rooms[rid]; if(!g)return; if(g.phase==='BURST')return; if(g.phase==='SETUP'){ if(g.subPhase==='SETTLEMENT'){ const vs=g.board.vertices.filter(v=>!v.owner&&!g.board.edges.some(e=>(e.v1===v.id||e.v2===v.id)&&g.board.vertices.find(vt=>vt.id===(e.v1===v.id?e.v2:e.v1)).owner)); if(vs.length) handleBuildSettlement(rid,p.id,vs[Math.floor(Math.random()*vs.length)].id); } else { const es=g.board.edges.filter(e=>(e.v1===g.lastSettlementId||e.v2===g.lastSettlementId)&&!e.owner); if(es.length) handleBuildRoad(rid,p.id,es[0].id); } } else if(g.phase==='ROBBER'){ const hs=g.board.hexes.filter(h=>h.id!==g.robberHexId&&h.resource!=='desert'); if(hs.length) handleMoveRobber(rid,p.id,hs[Math.floor(Math.random()*hs.length)].id); } else { if(!g.diceResult) handleRollDice(rid,p.id); else { let acted=false; if(!acted&&p.resources.forest>=1&&p.resources.hill>=1){ const es=g.board.edges.filter(e=>!e.owner&&(g.board.edges.some(oe=>oe.owner===p.color&&(oe.v1===e.v1||oe.v1===e.v2||oe.v2===e.v1||oe.v2===e.v2))||g.board.vertices.some(v=>v.owner===p.color&&(v.id===e.v1||v.id===e.v2)))); if(es.length){handleBuildRoad(rid,p.id,es[0].id);acted=true;} } if(!acted) handleEndTurn(rid,p.id); else setTimeout(()=>botAction(rid,p),1000); } } }
+
+// ★修正: 開拓地建設ロジック
 function handleBuildSettlement(rid, pid, vId) {
     const game = rooms[rid];
     const player = game.players.find(p => p.id === pid);
     if (!player || game.players[game.turnIndex].id !== pid) return;
     const vertex = game.board.vertices.find(v => v.id === vId);
-    if (!vertex || vertex.owner) return; // 既に誰かが置いている
+    if (!vertex || vertex.owner) return; 
     
-    // 距離ルールチェック (隣接する頂点に建物がないか)
+    // 距離ルール (隣接頂点に建物なし)
     const neighbors = game.board.edges.filter(e => e.v1 === vId || e.v2 === vId).map(e => (e.v1 === vId ? e.v2 : e.v1));
     if (neighbors.some(nId => game.board.vertices.find(v => v.id === nId).owner)) return;
 
@@ -214,14 +247,13 @@ function handleBuildSettlement(rid, pid, vId) {
         if (!payCost(game, player, { forest: 1, hill: 1, field: 1, pasture: 1 })) return;
     }
     
-    // 建設実行
     vertex.owner = player.color;
     vertex.type = 'settlement';
     game.lastSettlementId = vId;
     addLog(rid, `${player.name} が開拓地を建設`);
     io.to(rid).emit('playSound', 'build');
 
-    // SETUP時の資源獲得 (2週目)
+    // SETUP時の資源獲得
     if (game.phase === 'SETUP' && game.setupStep >= game.players.length) {
         game.board.hexes.forEach(h => {
             if (Math.abs(Math.hypot(h.x - vertex.x, h.y - vertex.y) - 1.0) < 0.1 && h.resource !== 'desert' && game.bank[h.resource] > 0) {
@@ -235,7 +267,7 @@ function handleBuildSettlement(rid, pid, vId) {
     updateVictoryPoints(rid);
     
     if (game.phase === 'SETUP') {
-        game.subPhase = 'ROAD'; // 次は道を置く
+        game.subPhase = 'ROAD'; // SETUP中は次は道
         io.to(rid).emit('updateState', game);
         checkBotTurn(rid);
     } else {
@@ -243,20 +275,9 @@ function handleBuildSettlement(rid, pid, vId) {
     }
 }
 
-// ... (他の関数は前回と同じ) ...
-function handleBotTrade(rid,s,b,g,r){ const gm=rooms[rid]; let acc=false; if(b.resources[r]>0) acc=true; if(acc){ s.resources[g]--; b.resources[g]++; s.resources[r]++; b.resources[r]--; addLog(rid,`${b.name} 成立`); io.to(rid).emit('updateState',gm); } else io.to(s.id).emit('message','拒否'); }
-function handleRollDice(rid,pid){ const g=rooms[rid]; if(g.players[g.turnIndex].id!==pid||g.diceResult)return; g.diceResult=Math.floor(Math.random()*6)+1+Math.floor(Math.random()*6)+1; g.stats.diceHistory[g.diceResult]++; addLog(rid,`出目:${g.diceResult}`); if(g.diceResult===7){ io.to(rid).emit('playSound','robber'); if(g.settings.burstEnabled){ g.burstPlayers=[]; g.players.forEach(p=>{ const sum=Object.values(p.resources).reduce((a,b)=>a+b,0); if(sum>=8){ g.burstPlayers.push(p.id); if(p.isBot){ const d=Math.floor(sum/2); for(let i=0;i<d;i++){ const k=Object.keys(p.resources).filter(x=>p.resources[x]>0); if(k.length)p.resources[k[Math.floor(Math.random()*k.length)]]--; } g.burstPlayers=g.burstPlayers.filter(id=>id!==p.id); addLog(rid,`${p.name} 破棄`); } } }); if(g.burstPlayers.length>0){ g.phase='BURST'; addLog(rid,"バースト発生"); } else g.phase='ROBBER'; } else g.phase='ROBBER'; } else { io.to(rid).emit('playSound','dice'); g.board.hexes.forEach(h=>{ if(h.number===g.diceResult&&h.id!==g.robberHexId&&h.resource!=='desert'){ g.board.vertices.forEach(v=>{ if(Math.abs(Math.hypot(v.x-h.x,v.y-h.y)-1.0)<0.1&&v.owner){ const pl=g.players.find(p=>p.color===v.owner); const amt=v.type==='city'?2:1; if(pl&&g.bank[h.resource]>=amt){ g.bank[h.resource]-=amt; pl.resources[h.resource]+=amt; g.stats.resourceCollected[pl.id]+=amt; } } }); } }); } io.to(rid).emit('updateState',g); checkBotTurn(rid); }
-function handleEndTurn(rid,pid){ const g=rooms[rid]; if(g.players[g.turnIndex].id!==pid)return; g.players[g.turnIndex].cards.forEach(c=>c.canUse=true); g.roadBuildingCount=0; g.turnIndex=(g.turnIndex+1)%g.players.length; g.diceResult=null; g.subPhase='MAIN_ACTION'; startTimer(rid); addLog(rid,`次: ${g.players[g.turnIndex].name}`); io.to(rid).emit('playSound','turnChange'); io.to(rid).emit('updateState',g); checkBotTurn(rid); }
-function handleTrade(rid,pid,d){ const g=rooms[rid], p=g.players.find(x=>x.id===pid); if(!p||g.players[g.turnIndex].id!==pid)return; if(p.resources[d.give]<1)return; /*port check*/ p.resources[d.give]--; g.bank[d.give]++; p.resources[d.receive]++; g.bank[d.receive]--; addLog(rid,`${p.name} 交換`); io.to(rid).emit('updateState',g); }
-function updateVictoryPoints(rid){ const g=rooms[rid]; const tvp=parseInt(g.settings.victoryPoints)||10; g.players.forEach(p=>{ let pts=0; g.board.vertices.forEach(v=>{ if(v.owner===p.color) pts+=(v.type==='city'?2:1); }); pts+=p.cards.filter(c=>c.type==='victory').length; if(g.largestArmy.playerId===p.id)pts+=3; if(g.longestRoad.playerId===p.id)pts+=3; p.victoryPoints=pts; }); const w=g.players.find(p=>p.victoryPoints>=tvp); if(w){ g.winner=w; g.phase='GAME_OVER'; addLog(rid,`勝者:${w.name}`); } }
-function checkLargestArmy(rid,player){ const g=rooms[rid]; if(player.armySize>=3&&player.armySize>g.largestArmy.size){ if(g.largestArmy.playerId!==player.id){g.largestArmy={playerId:player.id,size:player.armySize};addLog(rid,`騎士賞:${player.name}`);}else{g.largestArmy.size=player.armySize;} } }
-function checkLongestRoad(rid,player){ const g=rooms[rid]; if(player.roadLength>=5&&player.roadLength>g.longestRoad.length){ if(g.longestRoad.playerId!==player.id){g.longestRoad={playerId:player.id,length:player.roadLength};addLog(rid,`交易賞:${player.name}`);}else{g.longestRoad.length=player.roadLength;} } }
-function addLog(rid,msg){ if(rooms[rid]){ rooms[rid].logs.push(msg); if(rooms[rid].logs.length>15)rooms[rid].logs.shift(); } }
-function checkBotTurn(rid){ const g=rooms[rid]; if(!g)return; const cur=g.players[g.turnIndex]; if(cur&&cur.isBot) setTimeout(()=>botAction(rid,cur),1500); }
-function botAction(rid,p){ const g=rooms[rid]; if(!g)return; if(g.phase==='BURST')return; if(g.phase==='SETUP'){ if(g.subPhase==='SETTLEMENT'){ const vs=g.board.vertices.filter(v=>!v.owner&&!g.board.edges.some(e=>(e.v1===v.id||e.v2===v.id)&&g.board.vertices.find(vt=>vt.id===(e.v1===v.id?e.v2:e.v1)).owner)); if(vs.length) handleBuildSettlement(rid,p.id,vs[Math.floor(Math.random()*vs.length)].id); } else { const es=g.board.edges.filter(e=>(e.v1===g.lastSettlementId||e.v2===g.lastSettlementId)&&!e.owner); if(es.length) handleBuildRoad(rid,p.id,es[0].id); } } else if(g.phase==='ROBBER'){ const hs=g.board.hexes.filter(h=>h.id!==g.robberHexId&&h.resource!=='desert'); if(hs.length) handleMoveRobber(rid,p.id,hs[Math.floor(Math.random()*hs.length)].id); } else { if(!g.diceResult) handleRollDice(rid,p.id); else { let acted=false; if(!acted&&p.resources.forest>=1&&p.resources.hill>=1){ const es=g.board.edges.filter(e=>!e.owner&&(g.board.edges.some(oe=>oe.owner===p.color&&(oe.v1===e.v1||oe.v1===e.v2||oe.v2===e.v1||oe.v2===e.v2))||g.board.vertices.some(v=>v.owner===p.color&&(v.id===e.v1||v.id===e.v2)))); if(es.length){handleBuildRoad(rid,p.id,es[0].id);acted=true;} } if(!acted) handleEndTurn(rid,p.id); else setTimeout(()=>botAction(rid,p),1000); } } }
 function handleBuildCity(rid,pid,vid){ const g=rooms[rid], p=g.players.find(x=>x.id===pid); if(!p||g.players[g.turnIndex].id!==pid||g.phase!=='MAIN')return; const v=g.board.vertices.find(x=>x.id===vid); if(!v||v.owner!==p.color||v.type!=='settlement')return; if(!payCost(g,p,{field:2,mountain:3}))return; v.type='city'; addLog(rid,`${p.name} 都市`); io.to(rid).emit('playSound','build'); updateVictoryPoints(rid); io.to(rid).emit('updateState',g); }
 function handleBuildRoad(rid,pid,eid){ const g=rooms[rid], p=g.players.find(x=>x.id===pid); if(!p||g.players[g.turnIndex].id!==pid)return; const e=g.board.edges.find(x=>x.id===eid); if(!e||e.owner)return; if(g.phase==='SETUP'){ if(e.v1!==g.lastSettlementId&&e.v2!==g.lastSettlementId)return; } else { const c=g.board.edges.some(oe=>oe.owner===p.color&&(oe.v1===eid||oe.v1===e.v2||oe.v2===eid||oe.v2===e.v2))||g.board.vertices.some(v=>v.owner===p.color&&(v.id===e.v1||v.id===e.v2)); if(!c)return; if(g.roadBuildingCount>0){ g.roadBuildingCount--; addLog(rid,`${p.name} 街道`); } else { if(!payCost(g,p,{forest:1,hill:1}))return; } } e.owner=p.color; p.roadLength++; checkLongestRoad(rid,p); addLog(rid,`${p.name} 道`); io.to(rid).emit('playSound','build'); updateVictoryPoints(rid); if(g.phase==='SETUP'){ g.setupStep++; if(g.setupStep>=g.setupTurnOrder.length){ g.phase='MAIN'; g.turnIndex=0; g.subPhase='MAIN_ACTION'; g.diceResult=null; 
-    // ★SETUP終了時に数字を表示する（隠す設定の場合のみここで公開）
+    // ★数字表示タイミング
     if(g.settings.hideNumbers) { g.board.hexes.forEach((h,i)=>{ h.number=g.hiddenNumbers[i]; }); }
     addLog(rid,"開始！"); io.to(rid).emit('playSound','start'); } else { g.turnIndex=g.setupTurnOrder[g.setupStep]; g.subPhase='SETTLEMENT'; } io.to(rid).emit('updateState',g); checkBotTurn(rid); } else io.to(rid).emit('updateState',g); }
 function handleBuyCard(rid,pid){ const g=rooms[rid], p=g.players.find(x=>x.id===pid); if(!p||g.players[g.turnIndex].id!==pid||g.phase!=='MAIN')return; if(g.devCardDeck.length===0||!payCost(g,p,{field:1,pasture:1,mountain:1}))return; const c=g.devCardDeck.pop(); p.cards.push({type:c,canUse:false}); addLog(rid,`${p.name} カード購入`); if(c==='victory')updateVictoryPoints(rid); io.to(rid).emit('playSound','build'); io.to(rid).emit('updateState',g); }
