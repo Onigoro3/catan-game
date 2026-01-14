@@ -1,128 +1,205 @@
-/* --- Global --- */
-body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: sans-serif; touch-action: none; }
-button { cursor: pointer; border: none; border-radius: 5px; font-weight: bold; color: white; background: #4CAF50; transition: 0.1s; }
-button:active { transform: translateY(2px); }
-button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
-select, input { border-radius: 4px; border: 1px solid #ccc; padding: 8px; font-size: 16px; box-sizing: border-box; }
+/* =========================================
+   基本設定 (Global Styles)
+   ========================================= */
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #87CEEB;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    touch-action: none; /* スマホでのスクロール無効化 */
+    user-select: none;  /* テキスト選択無効化 */
+}
 
-/* --- Modal & Login --- */
-#modal-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10000; pointer-events: none; }
-#modal-layer > * { pointer-events: auto; }
+button {
+    cursor: pointer;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    color: white;
+    background: #4CAF50;
+    transition: transform 0.1s, opacity 0.2s;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+button:active { transform: scale(0.95); }
+button:disabled { background: #ccc; cursor: not-allowed; transform: none; box-shadow: none; }
 
+select, input[type="text"] {
+    border-radius: 5px; border: 1px solid #ccc; padding: 8px; font-size: 16px;
+}
+
+/* =========================================
+   キャンバス (最背面)
+   ========================================= */
+#gameCanvas {
+    position: absolute; top: 0; left: 0; z-index: 0; /* 一番下 */
+    touch-action: none;
+}
+
+/* =========================================
+   UIレイヤー (前面) - 重要修正
+   ========================================= */
+#ui-layer {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; /* ★重要: これでクリックが貫通する */
+    z-index: 100;
+}
+/* UIレイヤー内の「操作可能な要素」だけクリック有効にする */
+#ui-layer button, 
+#ui-layer input, 
+#ui-layer select, 
+#ui-layer .panel-box, 
+#chat-container, 
+#mobile-header,
+#side-menu,
+#modal-layer > * {
+    pointer-events: auto;
+}
+
+/* =========================================
+   モーダル & オーバーレイ
+   ========================================= */
+#modal-layer {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 10000; pointer-events: none;
+}
 #login-screen {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    background: white; padding: 20px; border-radius: 15px;
-    width: 90%; max-width: 400px; max-height: 90vh; overflow-y: auto;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 2px solid #ddd;
-    text-align: center;
+    background: white; padding: 25px; border-radius: 15px; text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 90%; max-width: 400px;
+    max-height: 85vh; overflow-y: auto; pointer-events: auto;
 }
-.input-group { margin-bottom: 10px; text-align: left; }
-.input-group label { display: block; font-size: 12px; color: #555; margin-bottom: 3px; }
-.input-group input, .input-group select { width: 100%; }
-
-.tab-container { display: flex; margin-bottom: 10px; border-bottom: 2px solid #ddd; }
-.tab-btn { flex: 1; background: transparent; color: #666; border-radius: 5px 5px 0 0; padding: 10px; }
-.tab-btn.active { background: #eee; color: #333; border-bottom: 2px solid #4CAF50; margin-bottom: -2px; }
-
-.form-content { background: #fdfdfd; padding: 10px; border-radius: 0 0 5px 5px; }
-.setting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.setting-item { display: flex; flex-direction: column; }
-
-.action-btn { width: 100%; padding: 12px; margin-top: 15px; font-size: 16px; }
-.join-color { background: #2196F3; }
-.create-color { background: #FF5722; }
-.skin-select-container { margin-top: 15px; font-size: 14px; }
-
-/* Overlay Common */
 .overlay-content {
-    background: white; padding: 30px; border-radius: 20px; text-align: center;
-    box-shadow: 0 15px 40px rgba(0,0,0,0.6); width: 85%; max-width: 450px;
+    background: white; padding: 25px; border-radius: 15px; text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6); width: 85%; max-width: 400px;
+    pointer-events: auto;
 }
 #start-overlay, #winner-overlay, #burst-overlay, #trade-req-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; pointer-events: auto;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
+    display: flex; justify-content: center; align-items: center;
+    pointer-events: auto;
 }
-.pulse-button { font-size: 20px; padding: 12px 30px; background: #FF5722; width: 100%; border-radius: 10px; margin-top: 10px; }
-.sub-btn { background: #008CBA; font-size: 14px; margin-bottom: 10px; padding: 8px; width: 100%; }
 
-/* Game UI */
-#ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100; }
-#ui-layer > * { pointer-events: auto; }
+/* 設定画面パーツ */
+.input-group { margin-bottom: 15px; text-align: left; }
+.input-group label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; }
+.input-group input { width: 100%; }
+.tab-container { display: flex; margin-bottom: 15px; border-bottom: 2px solid #ddd; }
+.tab-btn { flex: 1; background: transparent; color: #666; border-radius: 5px 5px 0 0; padding: 10px; box-shadow: none; }
+.tab-btn.active { background: #eee; color: #333; border-bottom: 3px solid #4CAF50; }
+.setting-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: left; }
+.setting-item label { font-size: 11px; display: block; }
+.setting-item select { width: 100%; font-size: 14px; padding: 5px; }
+.action-btn { width: 100%; padding: 12px; font-size: 16px; margin-top: 10px; }
+.join-color { background: #2196F3; } .create-color { background: #FF5722; }
 
-/* Chat - 位置を調整して重なり回避 */
+/* サイコロアニメ */
+#dice-anim-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center;
+    z-index: 9000; pointer-events: auto;
+}
+.dice-box { display: flex; gap: 20px; }
+.die {
+    width: 60px; height: 60px; background: white; border-radius: 10px; border: 3px solid #333;
+    display: flex; justify-content: center; align-items: center; font-size: 30px; font-weight: bold;
+}
+
+/* =========================================
+   チャット & ログ
+   ========================================= */
 #chat-container {
-    position: absolute; top: 120px; left: 10px; width: 200px;
-    z-index: 300; background: rgba(255,255,255,0.85); border-radius: 8px; padding: 5px;
-    display: flex; flex-direction: column; max-height: 150px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    position: absolute; top: 100px; left: 10px; width: 220px;
+    z-index: 300; background: rgba(255,255,255,0.8);
+    border-radius: 8px; padding: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    display: flex; flex-direction: column;
 }
-#chat-messages { flex-grow: 1; overflow-y: auto; font-size: 11px; height: 100px; margin-bottom: 3px; }
-.chat-input-row { display: flex; gap: 3px; }
-#chat-input { font-size: 12px; padding: 3px; flex-grow: 1; width: 50px; }
+#chat-messages { height: 100px; overflow-y: auto; font-size: 11px; margin-bottom: 5px; text-shadow: 1px 1px 0 #fff; }
+.chat-input-row { display: flex; gap: 5px; }
+#chat-input { flex: 1; font-size: 12px; padding: 4px; }
 
-/* PC Layout (Default) */
-#mobile-header, #side-menu, #mobile-mini-status, #mobile-build-icons { display: none; }
+/* =========================================
+   PC用レイアウト
+   ========================================= */
+#pc-info-panel, #pc-log-container, #pc-cost-table, #pc-status-bar { display: none; } /* デフォルト非表示 */
 
-#pc-log-container { position: absolute; top: 20px; left: 20px; width: 280px; background: rgba(255,255,255,0.9); border-radius: 8px; padding: 10px; }
-#pc-log-area { height: 150px; overflow-y: scroll; font-size: 13px; }
-#pc-cost-table { position: absolute; bottom: 120px; left: 20px; width: 240px; background: rgba(255,255,255,0.95); border-radius: 12px; padding: 15px; }
-.cost-item { display: flex; justify-content: space-between; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
-.build-btn { padding: 4px 8px; font-size: 12px; background: #008CBA; }
-#pc-info-panel { position: absolute; top: 20px; right: 20px; width: 240px; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; }
-.panel-box { background: rgba(255,255,255,0.95); border-radius: 8px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-.panel-box h3 { margin: 0 0 5px 0; font-size: 15px; border-bottom: 1px solid #ddd; }
-.center-box { text-align: center; }
-.time-box { font-size: 20px; font-weight: bold; color: red; }
-.reset-btn { background: #666; width: 100%; margin-top: 5px; font-size: 12px; padding: 5px; }
-.invite-btn { background: #008CBA; width: 100%; margin-top: 5px; font-size: 12px; padding: 5px; }
-#pc-status-bar { position: absolute; top: 0; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.95); padding: 5px 40px; border-radius: 0 0 15px 15px; font-weight: bold; text-align: center; }
-
-/* Controls */
-#controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.98); padding: 20px; border-radius: 20px; min-width: 600px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
-#action-msg { color: #d32f2f; font-weight: bold; font-size: 18px; margin-bottom: 10px; }
-.control-row { display: flex; justify-content: space-around; align-items: center; gap: 20px; }
-.dice-group button { padding: 10px 25px; font-size: 16px; margin: 0 5px; }
-.trade-ui { display: flex; align-items: center; gap: 5px; }
-.trade-ui select { padding: 5px; font-size: 14px; }
-.trade-ui button { padding: 5px 15px; font-size: 14px; }
-#trade-rate-msg { font-size: 12px; color: #555; }
-
-/* Mobile Layout */
-@media (max-width: 600px) {
-    #pc-log-container, #pc-cost-table, #pc-info-panel, #pc-status-bar { display: none; }
-    #mobile-header, #side-menu, #mobile-mini-status, #mobile-build-icons { display: block; }
+/* =========================================
+   スマホ用レイアウト (Mobile)
+   ========================================= */
+@media (max-width: 1024px) {
+    #mobile-header {
+        display: flex; position: absolute; top: 0; left: 0; width: 100%; height: 50px;
+        background: rgba(255,255,255,0.95); justify-content: space-between; align-items: center;
+        padding: 0 15px; box-sizing: border-box; z-index: 500;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    #mobile-game-info { font-weight: bold; font-size: 14px; }
+    #timer-display { font-weight: bold; color: #d32f2f; font-size: 18px; margin-right: 10px; }
     
-    #mobile-header { display: flex; position: absolute; top: 0; left: 0; width: 100%; height: 45px; background: rgba(255,255,255,0.98); justify-content: space-between; align-items: center; padding: 0 10px; box-sizing: border-box; z-index: 500; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    #mobile-game-info { font-size: 12px; font-weight: bold; }
-    #timer-display { font-weight: bold; color: red; font-size: 16px; margin-left: 10px; }
-    #menu-btn { padding: 5px 12px; font-size: 16px; background: #333; }
-
-    #side-menu { position: absolute; top: 0; right: 0; width: 260px; height: 100%; background: white; z-index: 2000; transform: translateX(100%); transition: 0.3s; box-shadow: -2px 0 10px rgba(0,0,0,0.2); overflow-y: auto; }
+    #side-menu {
+        position: absolute; top: 0; right: 0; width: 280px; height: 100%;
+        background: white; z-index: 2000; transform: translateX(100%); transition: 0.3s;
+        box-shadow: -5px 0 15px rgba(0,0,0,0.2); overflow-y: auto;
+    }
     #side-menu:not(.hidden) { transform: translateX(0); }
-    .menu-content { padding: 50px 10px 20px 10px; }
-    .close-btn { position: absolute; top: 10px; right: 10px; background: transparent; color: #333; font-size: 24px; padding: 0; width: 30px; }
-    .menu-action-btn { width: 100%; background: #008CBA; margin-bottom: 10px; }
+    .menu-content { padding: 60px 15px 20px; }
+    .close-btn { position: absolute; top: 10px; right: 10px; font-size: 30px; background: none; color: #333; box-shadow: none; }
+    
+    #mobile-mini-status {
+        position: absolute; top: 60px; left: 10px; right: 10px;
+        background: rgba(255,255,255,0.85); padding: 6px; border-radius: 8px;
+        font-size: 12px; font-weight: bold; pointer-events: none; /* 貫通させる */
+        display: flex; justify-content: space-between;
+    }
 
-    #mobile-mini-status { position: absolute; top: 50px; left: 10px; right: 10px; background: rgba(255,255,255,0.8); padding: 5px; border-radius: 8px; font-size: 11px; font-weight: bold; pointer-events: none; display: flex; justify-content: space-between; z-index: 100; }
+    /* 操作パネル: 重要修正 */
+    #controls {
+        position: absolute; bottom: 10px; left: 0; width: 100%;
+        pointer-events: none; /* コンテナ自体はクリックを通す */
+        display: flex; flex-direction: column; align-items: center;
+        z-index: 200;
+    }
+    #action-msg {
+        background: rgba(255,255,255,0.9); padding: 5px 15px; border-radius: 20px;
+        font-weight: bold; color: #d32f2f; margin-bottom: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        pointer-events: auto;
+    }
     
-    #controls { bottom: 10px; padding: 10px; width: 95%; min-width: auto; border-radius: 12px; }
-    #mobile-build-icons { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; }
-    .m-b-btn { background: white; color: #333; border: 1px solid #999; width: 50px; height: 50px; font-size: 10px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .m-b-btn:active { background: #eee; }
+    /* 建設ボタン群 */
+    #mobile-build-icons {
+        display: flex; gap: 15px; margin-bottom: 10px; pointer-events: auto;
+    }
+    .m-b-btn {
+        width: 60px; height: 60px; border-radius: 12px;
+        background: white; color: #333; border: 2px solid #ddd;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        font-size: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    }
+    .m-b-btn:active { background: #e0e0e0; transform: translateY(2px); }
+
+    /* メイン操作部 */
+    #main-controls {
+        width: 90%; background: rgba(255,255,255,0.95);
+        padding: 10px; border-radius: 15px; pointer-events: auto;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+    }
+    .control-row { display: flex; flex-direction: column; gap: 10px; }
+    .dice-group { display: flex; gap: 10px; }
+    .dice-group button { flex: 1; padding: 10px; font-size: 16px; }
     
-    .control-row { flex-direction: column; gap: 10px; }
-    .dice-group { width: 100%; display: flex; gap: 10px; }
-    .dice-group button { flex: 1; padding: 10px; }
-    .trade-ui { flex-wrap: wrap; justify-content: center; }
-    .trade-ui select { width: 60px; font-size: 11px; padding: 3px; }
-    .trade-ui button { font-size: 12px; padding: 5px 10px; width: 100%; margin-top: 5px; }
-    #trade-rate-msg { width: 100%; text-align: center; }
-    #action-msg { font-size: 14px; margin-bottom: 5px; background: rgba(255,255,255,0.8); display: inline-block; padding: 3px 8px; border-radius: 4px; }
+    .trade-ui { display: flex; gap: 5px; justify-content: center; align-items: center; }
+    .trade-ui select { width: 70px; font-size: 12px; }
+    .trade-ui button { font-size: 12px; padding: 8px 15px; }
 }
 
-/* Dice Anim */
-#dice-anim-overlay { z-index: 9000; }
-.die { border: 2px solid #333; }
-#burst-selector { margin: 20px 0; }
-#burst-selector button { padding: 5px 10px; margin: 0 5px; background: #666; }
-#result-stats h3 { border-bottom: 1px solid #ccc; }
-#timer-display, #pc-timer { font-family: monospace; font-size: 1.2em; }
+/* PC用表示 */
+@media (min-width: 1025px) {
+    #mobile-header, #side-menu, #mobile-mini-status, #mobile-build-icons { display: none !important; }
+    #pc-info-panel, #pc-log-container, #pc-cost-table, #pc-status-bar { display: block; }
+    
+    #pc-info-panel { position: absolute; top: 20px; right: 20px; width: 250px; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 10px; }
+    #pc-log-container { position: absolute; top: 20px; left: 20px; width: 300px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 10px; }
+    #pc-cost-table { position: absolute; bottom: 100px; left: 20px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 10px; }
+    #controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.95); padding: 20px; border-radius: 20px; pointer-events: auto; }
+}
